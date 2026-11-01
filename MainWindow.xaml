@@ -1,7 +1,8 @@
 <Window x:Class="Butane.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Butane" Height="760" Width="1200" MinWidth="720" MinHeight="480"
+        Title="Butane" Icon="pack://application:,,,/butane.ico"
+        Height="760" Width="1200" MinWidth="720" MinHeight="480"
         Background="{StaticResource BgBrush}" PreviewKeyDown="Window_PreviewKeyDown">
 
     <Grid>

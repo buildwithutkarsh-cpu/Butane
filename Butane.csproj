@@ -8,7 +8,12 @@
     <UseWPF>true</UseWPF>
     <RootNamespace>Butane</RootNamespace>
     <AssemblyName>Butane</AssemblyName>
+    <ApplicationIcon>butane.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="butane.ico" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.*" />

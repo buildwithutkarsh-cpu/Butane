@@ -17,11 +17,12 @@ AppVersion={#AppVersion}
 AppPublisher=Butane
 DefaultDirName={localappdata}\Programs\Butane
 DefaultGroupName=Butane
-UninstallDisplayIcon={app}\Butane.exe
+UninstallDisplayIcon={app}\butane.ico
 UninstallDisplayName=Butane
+SetupIconFile=butane.ico
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
-ArchitecturesInstallIn64BitMode=x64
+ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir={#OutputDir}
 OutputBaseFilename=Butane-Setup-{#AppVersion}
 Compression=lzma2
@@ -35,10 +36,11 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 
 [Files]
 Source: "{#PublishDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "butane.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\Butane"; Filename: "{app}\Butane.exe"; WorkingDir: "{app}"
-Name: "{autodesktop}\Butane"; Filename: "{app}\Butane.exe"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{group}\Butane"; Filename: "{app}\Butane.exe"; WorkingDir: "{app}"; IconFilename: "{app}\butane.ico"
+Name: "{autodesktop}\Butane"; Filename: "{app}\Butane.exe"; WorkingDir: "{app}"; IconFilename: "{app}\butane.ico"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\Butane.exe"; Description: "Launch Butane"; WorkingDir: "{app}"; Flags: postinstall nowait skipifsilent
