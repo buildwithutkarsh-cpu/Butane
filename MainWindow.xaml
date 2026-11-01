@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Butane" Height="760" Width="1200" MinWidth="720" MinHeight="480"
-        Background="{StaticResource BgBrush}">
+        Background="{StaticResource BgBrush}" PreviewKeyDown="Window_PreviewKeyDown">
 
     <Grid>
         <Grid.ColumnDefinitions>
@@ -32,7 +32,8 @@
                     <TextBlock Text="TABS" Foreground="White" FontFamily="{StaticResource Mono}"
                                FontSize="12" FontWeight="Bold" VerticalAlignment="Center" Margin="20,0,0,0" />
                     <Button Content="+ NEW" Style="{StaticResource FlatButton}" Foreground="{StaticResource DimBrush}"
-                            HorizontalAlignment="Right" Width="70" Height="46" Click="NewTab_Click" />
+                            HorizontalAlignment="Right" Width="70" Height="46" ToolTip="New tab (Ctrl+T)"
+                            Click="NewTab_Click" />
                 </Grid>
 
                 <!-- Tab list -->
@@ -51,7 +52,7 @@
                                            VerticalAlignment="Center" />
                                 <Button Grid.Column="1" Content="&#xD7;" FontSize="16" Width="28" Height="28"
                                         Style="{StaticResource FlatButton}" Foreground="{StaticResource DimBrush}"
-                                        ToolTip="Close tab" Click="CloseTab_Click" />
+                                        ToolTip="Close tab (Ctrl+W)" Click="CloseTab_Click" />
                             </Grid>
                         </DataTemplate>
                     </ListBox.ItemTemplate>

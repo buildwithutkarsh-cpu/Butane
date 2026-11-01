@@ -17,7 +17,9 @@ You can also open `Butane.csproj` in Visual Studio 2022 and press F5.
 
 ## What works now
 
-- Sidebar tabs: add with "+ NEW", close with the x, click to switch
+- Multi-tab browsing: add with "+ NEW", close with the x, and click a tab to switch
+- Keyboard shortcuts: Ctrl+T (new tab), Ctrl+W (close tab), Ctrl+Tab / Ctrl+Shift+Tab
+  (switch tabs), Ctrl+1–8 (select tab), Ctrl+9 (last tab), and Ctrl+L (address bar)
 - Top bar: type a web address or search with DuckDuckGo
 - Browser DNS-over-HTTPS: Cloudflare in secure mode
 - BLOCKED counter and the SHIELD toggle (small starter blocklist of ad and tracker hosts)

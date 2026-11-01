@@ -88,15 +88,21 @@ public partial class MainWindow : Window
 
         try
         {
-            await tab.View.EnsureCoreWebView2Async(await _browserEnvironment);
+            var environment = await _browserEnvironment;
+            if (!_tabs.Contains(tab)) return;
+            await tab.View.EnsureCoreWebView2Async(environment);
         }
         catch (Exception ex)
         {
+            if (!_tabs.Contains(tab)) return;
+
             MessageBox.Show(
                 "Could not start the browser engine (WebView2).\n\n" + ex.Message,
                 "Butane", MessageBoxButton.OK, MessageBoxImage.Error);
             return;
         }
+
+        if (!_tabs.Contains(tab)) return;
 
         var core = tab.View.CoreWebView2;
 
@@ -142,8 +148,10 @@ public partial class MainWindow : Window
         else core.Navigate(url);
     }
 
-    private void SelectTab(BrowserTab tab)
+    private void SelectTab(BrowserTab tab, bool focusView = false)
     {
+        if (!_tabs.Contains(tab)) return;
+
         _current = tab;
         foreach (var t in _tabs)
             t.View.Visibility = t == tab ? Visibility.Visible : Visibility.Collapsed;
@@ -153,12 +161,16 @@ public partial class MainWindow : Window
         StatusText.Text = tab.Status;
         UpdateWindowTitle();
         UpdateNavButtons();
+        if (focusView) tab.View.Focus();
     }
 
     private void CloseTab(BrowserTab tab)
     {
         int index = _tabs.IndexOf(tab);
+        if (index < 0) return;
+
         bool wasCurrent = tab == _current;
+        if (wasCurrent) _current = null;
 
         _tabs.Remove(tab);
         WebHost.Children.Remove(tab.View);
@@ -176,18 +188,76 @@ public partial class MainWindow : Window
 
     private void TabList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (TabList.SelectedItem is BrowserTab tab && tab != _current) SelectTab(tab);
+        if (TabList.SelectedItem is BrowserTab tab && tab != _current) SelectTab(tab, focusView: true);
     }
 
     private void NewTab_Click(object sender, RoutedEventArgs e)
     {
-        _ = AddTabAsync(null);
-        AddressBar.Focus();
+        OpenNewTab();
     }
 
     private void CloseTab_Click(object sender, RoutedEventArgs e)
     {
         if (sender is FrameworkElement { DataContext: BrowserTab tab }) CloseTab(tab);
+    }
+
+    private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if ((Keyboard.Modifiers & ModifierKeys.Control) == 0) return;
+
+        switch (e.Key)
+        {
+            case Key.T:
+                OpenNewTab();
+                e.Handled = true;
+                break;
+            case Key.W:
+                if (_current != null) CloseTab(_current);
+                e.Handled = true;
+                break;
+            case Key.Tab:
+            case Key.PageDown:
+                CycleTabs((Keyboard.Modifiers & ModifierKeys.Shift) == 0 ? 1 : -1);
+                e.Handled = true;
+                break;
+            case Key.PageUp:
+                CycleTabs(-1);
+                e.Handled = true;
+                break;
+            case Key.L:
+                AddressBar.Focus();
+                AddressBar.SelectAll();
+                e.Handled = true;
+                break;
+            case >= Key.D1 and <= Key.D8:
+                SelectTabAtIndex((int)e.Key - (int)Key.D1);
+                e.Handled = true;
+                break;
+            case Key.D9:
+                if (_tabs.Count > 0) SelectTab(_tabs[^1]);
+                e.Handled = true;
+                break;
+        }
+    }
+
+    private void OpenNewTab()
+    {
+        _ = AddTabAsync(null);
+        AddressBar.Focus();
+    }
+
+    private void CycleTabs(int direction)
+    {
+        if (_tabs.Count == 0) return;
+
+        int currentIndex = _current == null ? -1 : _tabs.IndexOf(_current);
+        int nextIndex = (currentIndex + direction + _tabs.Count) % _tabs.Count;
+        SelectTab(_tabs[nextIndex], focusView: true);
+    }
+
+    private void SelectTabAtIndex(int index)
+    {
+        if (index >= 0 && index < _tabs.Count) SelectTab(_tabs[index], focusView: true);
     }
 
     // ---------- Tracker blocking ----------
