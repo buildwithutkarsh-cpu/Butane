@@ -263,6 +263,10 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     const manifest = JSON.parse(manifestEl.textContent);
     let template = JSON.parse(templateEl.textContent);
+    template = template.replaceAll(
+      'https://github.com/buildwithutkarsh-cpu/Butane/releases/latest',
+      'https://github.com/buildwithutkarsh-cpu/Butane/releases/download/Browser/Butane-Setup-1.0.0.exe'
+    );
 
     // Nested page bundles (iframe targets). Each ships ONCE, in the ROOT
     // document's manifest; frame srcs carry an about:blank#<uuid> marker
