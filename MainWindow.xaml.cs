@@ -1,5 +1,7 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
@@ -14,11 +16,21 @@ public partial class MainWindow : Window
     private const string SearchUrl = "https://duckduckgo.com/?q=";
     private const string CloudflareDnsUrl = "https://cloudflare-dns.com/dns-query";
 
-    private static Task<CoreWebView2Environment> CreateBrowserEnvironmentAsync()
+    private static readonly Lazy<Task<CoreWebView2Environment>> PersistentBrowserEnvironment =
+        new(() => CreateBrowserEnvironmentAsync(null));
+
+    private readonly bool _isPrivate;
+    private readonly string? _privateUserDataFolder;
+    private readonly Task<CoreWebView2Environment> _browserEnvironment;
+    private readonly HashSet<Task> _tabInitializations = new();
+    private bool _isClosing;
+    private bool _privateCleanupComplete;
+
+    private static Task<CoreWebView2Environment> CreateBrowserEnvironmentAsync(string? userDataFolder)
     {
         var options = new CoreWebView2EnvironmentOptions(
-            $"--dns-over-https-mode=secure --dns-over-https-templates={CloudflareDnsUrl}");
-        return CoreWebView2Environment.CreateAsync(null, null, options);
+            $"--dns-over-https-mode=secure --dns-over-https-templates={CloudflareDnsUrl} --disable-third-party-cookies");
+        return CoreWebView2Environment.CreateAsync(null, userDataFolder, options);
     }
 
     // Tiny starter blocklist. We will swap this for real filter lists later.
@@ -53,16 +65,38 @@ public partial class MainWindow : Window
         """;
 
     private readonly ObservableCollection<BrowserTab> _tabs = new();
-    private readonly Task<CoreWebView2Environment> _browserEnvironment = CreateBrowserEnvironmentAsync();
     private BrowserTab? _current;
     private int _blocked;
     private bool _blockTrackers = true;
 
     public MainWindow()
+        : this(false)
     {
+    }
+
+    public MainWindow(bool isPrivate)
+    {
+        _isPrivate = isPrivate;
+        if (_isPrivate)
+        {
+            _privateUserDataFolder = Path.Combine(
+                Path.GetTempPath(), "Butane", "Private-" + Guid.NewGuid().ToString("N"));
+            _browserEnvironment = CreateBrowserEnvironmentAsync(_privateUserDataFolder);
+        }
+        else
+        {
+            _browserEnvironment = PersistentBrowserEnvironment.Value;
+        }
+
         InitializeComponent();
+        if (_isPrivate)
+        {
+            Title = "PRIVATE WINDOW - Butane";
+        }
+
         TabList.ItemsSource = _tabs;
-        Loaded += (_, _) => _ = AddTabAsync(null);
+        Loaded += (_, _) => StartAddTab(null);
+        Closing += Window_Closing;
     }
 
     // Dark title bar to match the interface (Windows 10 20H1+ and Windows 11).
@@ -79,6 +113,17 @@ public partial class MainWindow : Window
 
     // ---------- Tabs ----------
 
+    private void StartAddTab(string? url)
+    {
+        if (_isClosing) return;
+
+        var initialization = AddTabAsync(url);
+        _tabInitializations.Add(initialization);
+        _ = initialization.ContinueWith(
+            _ => Dispatcher.BeginInvoke(new Action(() => _tabInitializations.Remove(initialization))),
+            TaskScheduler.Default);
+    }
+
     private async Task AddTabAsync(string? url)
     {
         var tab = new BrowserTab();
@@ -89,12 +134,14 @@ public partial class MainWindow : Window
         try
         {
             var environment = await _browserEnvironment;
-            if (!_tabs.Contains(tab)) return;
-            await tab.View.EnsureCoreWebView2Async(environment);
+            if (_isClosing || !_tabs.Contains(tab)) return;
+            var controllerOptions = environment.CreateCoreWebView2ControllerOptions();
+            controllerOptions.IsInPrivateModeEnabled = _isPrivate;
+            await tab.View.EnsureCoreWebView2Async(environment, controllerOptions);
         }
         catch (Exception ex)
         {
-            if (!_tabs.Contains(tab)) return;
+            if (_isClosing || !_tabs.Contains(tab)) return;
 
             MessageBox.Show(
                 "Could not start the browser engine (WebView2).\n\n" + ex.Message,
@@ -102,9 +149,10 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (!_tabs.Contains(tab)) return;
+        if (_isClosing || !_tabs.Contains(tab)) return;
 
         var core = tab.View.CoreWebView2;
+        core.Profile.PreferredTrackingPreventionLevel = CoreWebView2TrackingPreventionLevel.Balanced;
 
         core.SourceChanged += (_, _) =>
         {
@@ -137,7 +185,7 @@ public partial class MainWindow : Window
         core.NewWindowRequested += (_, e) =>
         {
             e.Handled = true;
-            _ = AddTabAsync(e.Uri);
+            StartAddTab(e.Uri);
         };
 
         // Tracker blocking.
@@ -179,7 +227,7 @@ public partial class MainWindow : Window
         if (_tabs.Count == 0)
         {
             _current = null;
-            _ = AddTabAsync(null);
+            if (!_isClosing) StartAddTab(null);
             return;
         }
 
@@ -196,6 +244,16 @@ public partial class MainWindow : Window
         OpenNewTab();
     }
 
+    private void NewWindow_Click(object sender, RoutedEventArgs e)
+    {
+        OpenNewWindow(isPrivate: false);
+    }
+
+    private void PrivateWindow_Click(object sender, RoutedEventArgs e)
+    {
+        OpenNewWindow(isPrivate: true);
+    }
+
     private void CloseTab_Click(object sender, RoutedEventArgs e)
     {
         if (sender is FrameworkElement { DataContext: BrowserTab tab }) CloseTab(tab);
@@ -207,6 +265,10 @@ public partial class MainWindow : Window
 
         switch (e.Key)
         {
+            case Key.N:
+                OpenNewWindow((Keyboard.Modifiers & ModifierKeys.Shift) != 0);
+                e.Handled = true;
+                break;
             case Key.T:
                 OpenNewTab();
                 e.Handled = true;
@@ -242,8 +304,77 @@ public partial class MainWindow : Window
 
     private void OpenNewTab()
     {
-        _ = AddTabAsync(null);
+        StartAddTab(null);
         AddressBar.Focus();
+    }
+
+    private void OpenNewWindow(bool isPrivate)
+    {
+        var window = new MainWindow(isPrivate);
+        window.Show();
+        window.Activate();
+    }
+
+    private async void Window_Closing(object? sender, CancelEventArgs e)
+    {
+        if (!_isPrivate || _privateCleanupComplete) return;
+
+        e.Cancel = true;
+        if (_isClosing) return;
+
+        _isClosing = true;
+        var cleanupErrors = new List<string>();
+        try
+        {
+            await Task.WhenAll(_tabInitializations.ToArray());
+        }
+        catch (Exception ex)
+        {
+            cleanupErrors.Add("Could not finish initializing every tab: " + ex.Message);
+        }
+
+        var core = _tabs.Select(tab => tab.View.CoreWebView2).FirstOrDefault(view => view != null);
+        if (core != null)
+        {
+            try
+            {
+                await core.Profile.ClearBrowsingDataAsync(CoreWebView2BrowsingDataKinds.AllProfile);
+            }
+            catch (Exception ex)
+            {
+                cleanupErrors.Add("Could not clear private browsing data: " + ex.Message);
+            }
+        }
+
+        foreach (var tab in _tabs)
+        {
+            WebHost.Children.Remove(tab.View);
+            tab.View.Dispose();
+        }
+        _tabs.Clear();
+        _current = null;
+
+        if (_privateUserDataFolder != null && Directory.Exists(_privateUserDataFolder))
+        {
+            try
+            {
+                Directory.Delete(_privateUserDataFolder, recursive: true);
+            }
+            catch (Exception ex)
+            {
+                cleanupErrors.Add("Could not remove the temporary private profile: " + ex.Message);
+            }
+        }
+
+        _privateCleanupComplete = true;
+        if (cleanupErrors.Count > 0)
+        {
+            MessageBox.Show(
+                "Private window cleanup reported an error:\n\n" + string.Join("\n\n", cleanupErrors),
+                "Butane privacy cleanup", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+
+        Close();
     }
 
     private void CycleTabs(int direction)
@@ -299,7 +430,8 @@ public partial class MainWindow : Window
 
     private void UpdateWindowTitle()
     {
-        Title = string.IsNullOrWhiteSpace(_current?.Title) ? "Butane" : _current!.Title + " - Butane";
+        string title = string.IsNullOrWhiteSpace(_current?.Title) ? "Butane" : _current!.Title + " - Butane";
+        Title = _isPrivate ? "PRIVATE WINDOW - " + title : title;
     }
 
     private void SetStatus(BrowserTab tab, string text)

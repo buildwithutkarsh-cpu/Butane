@@ -23,8 +23,17 @@
 
                 <!-- Wordmark -->
                 <Border Grid.Row="0" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1">
-                    <TextBlock Text="BUTANE" Foreground="White" FontFamily="{StaticResource Mono}"
-                               FontSize="22" FontWeight="Black" VerticalAlignment="Center" Margin="20,0,0,0" />
+                    <Grid>
+                        <TextBlock Text="BUTANE" Foreground="White" FontFamily="{StaticResource Mono}"
+                                   FontSize="22" FontWeight="Black" VerticalAlignment="Center" Margin="20,0,0,0" />
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                            <Button Content="WINDOW" Style="{StaticResource FlatButton}" Foreground="{StaticResource DimBrush}"
+                                    Width="68" Height="59" ToolTip="New window (Ctrl+N)" Click="NewWindow_Click" />
+                            <Button Content="PRIVATE" Style="{StaticResource FlatButton}" Foreground="{StaticResource DimBrush}"
+                                    Width="68" Height="59" ToolTip="Private window (Ctrl+Shift+N)"
+                                    Click="PrivateWindow_Click" />
+                        </StackPanel>
+                    </Grid>
                 </Border>
 
                 <!-- Tabs header -->

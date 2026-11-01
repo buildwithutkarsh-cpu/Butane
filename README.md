@@ -18,6 +18,10 @@ You can also open `Butane.csproj` in Visual Studio 2022 and press F5.
 ## What works now
 
 - Multi-tab browsing: add with "+ NEW", close with the x, and click a tab to switch
+- Multiple windows: use WINDOW / PRIVATE buttons or Ctrl+N / Ctrl+Shift+N
+- Private windows use isolated WebView2 private profiles and clear all profile data on close
+- Regular windows block third-party cookies; first-party cookies remain available for site features
+  (sites may still use first-party marketing cookies, which browsers cannot reliably classify)
 - Keyboard shortcuts: Ctrl+T (new tab), Ctrl+W (close tab), Ctrl+Tab / Ctrl+Shift+Tab
   (switch tabs), Ctrl+1–8 (select tab), Ctrl+9 (last tab), and Ctrl+L (address bar)
 - Top bar: type a web address or search with DuckDuckGo
@@ -39,6 +43,5 @@ You can also open `Butane.csproj` in Visual Studio 2022 and press F5.
 
 1. Put the project in git (`git init`) before changing anything.
 2. Replace the starter blocklist with real filter lists (EasyList, EasyPrivacy).
-3. Keyboard shortcuts (Ctrl+T, Ctrl+W, Ctrl+L).
-4. Tab sleeping.
-5. Settings, bookmarks, history.
+3. Tab sleeping.
+4. Settings, bookmarks, history.
