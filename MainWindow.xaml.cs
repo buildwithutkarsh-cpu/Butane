@@ -274,7 +274,10 @@ public partial class MainWindow : Window
                 e.Handled = true;
                 break;
             case Key.W:
-                if (_current != null) CloseTab(_current);
+                if ((Keyboard.Modifiers & ModifierKeys.Shift) != 0)
+                    Close();
+                else if (_current != null)
+                    CloseTab(_current);
                 e.Handled = true;
                 break;
             case Key.Tab:
