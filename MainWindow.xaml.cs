@@ -4,10 +4,12 @@ using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
 using System.Runtime.InteropServices;
+using System.Collections.Specialized;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
+using Microsoft.Win32;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 
@@ -45,6 +47,208 @@ public partial class MainWindow : Window
         var options = new CoreWebView2EnvironmentOptions(
             $"--dns-over-https-mode=secure --dns-over-https-templates={CloudflareDnsUrl}");
         return CoreWebView2Environment.CreateAsync(null, userDataFolder, options);
+    }
+
+    private void BookmarkButton_Click(object sender, RoutedEventArgs e) => ToggleBookmark();
+
+    private void BookmarksButton_Click(object sender, RoutedEventArgs e) => OpenLibrary(0);
+    private void HistoryButton_Click(object sender, RoutedEventArgs e) => OpenLibrary(1);
+
+    private void DownloadsButton_Click(object sender, RoutedEventArgs e) => OpenLibrary(2);
+
+    private void ToggleBookmark()
+    {
+        string? url = _current?.View.CoreWebView2?.Source;
+        if (_isPrivate || !IsWeb(url)) return;
+
+        var existing = BrowserLibraryStore.Bookmarks.FirstOrDefault(
+            bookmark => string.Equals(bookmark.Url, url, StringComparison.OrdinalIgnoreCase));
+        if (existing != null)
+            BrowserLibraryStore.Bookmarks.Remove(existing);
+        else
+            BrowserLibraryStore.Bookmarks.Add(new BookmarkEntry
+            {
+                Title = string.IsNullOrWhiteSpace(_current?.Title) ? url! : _current!.Title,
+                Url = url!
+            });
+
+        try
+        {
+            BrowserLibraryStore.Save();
+        }
+        catch (Exception ex)
+        {
+            if (existing != null) BrowserLibraryStore.Bookmarks.Add(existing);
+            else BrowserLibraryStore.Bookmarks.Remove(BrowserLibraryStore.Bookmarks.Last());
+
+            MessageBox.Show(
+                "Could not save this bookmark.\n\n" + ex.Message,
+                "Butane bookmarks", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+
+        UpdateBookmarkButton();
+    }
+
+    private void UpdateBookmarkButton()
+    {
+        if (!IsLoaded || SaveBookmarkButton == null) return;
+        string? url = _current?.View.CoreWebView2?.Source;
+        bool isBookmarked = !_isPrivate && IsWeb(url) &&
+            BrowserLibraryStore.Bookmarks.Any(
+                bookmark => string.Equals(bookmark.Url, url, StringComparison.OrdinalIgnoreCase));
+        SaveBookmarkButton.Content = isBookmarked ? "SAVED" : "SAVE";
+        SaveBookmarkButton.IsEnabled = !_isPrivate && IsWeb(url);
+    }
+
+    private void Bookmarks_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e) =>
+        UpdateBookmarkButton();
+
+    private void AddHistoryEntry(string url, string title)
+    {
+        if (!IsWeb(url)) return;
+
+        var entry = new HistoryEntry
+        {
+            Title = string.IsNullOrWhiteSpace(title) ? url : title,
+            Url = url,
+            VisitedAt = DateTime.Now
+        };
+        BrowserLibraryStore.History.Insert(0, entry);
+        try
+        {
+            BrowserLibraryStore.Save();
+        }
+        catch (Exception ex)
+        {
+            BrowserLibraryStore.History.Remove(entry);
+            MessageBox.Show(
+                "Could not save browsing history.\n\n" + ex.Message,
+                "Butane history", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private void OpenLibrary(int selectedTab)
+    {
+        var bookmarks = _isPrivate
+            ? new ObservableCollection<BookmarkEntry>()
+            : BrowserLibraryStore.Bookmarks;
+        var history = _isPrivate
+            ? new ObservableCollection<HistoryEntry>()
+            : BrowserLibraryStore.History;
+        var downloads = _isPrivate ? _privateDownloads : BrowserLibraryStore.Downloads;
+        var window = new LibraryWindow(
+            bookmarks, history, downloads, NavigateTo, SaveLibraryData, CancelDownload, _isPrivate, selectedTab)
+        {
+            Owner = this
+        };
+        window.Show();
+        if (!_isPrivate) window.Activate();
+    }
+
+    private void NavigateTo(string url)
+    {
+        var core = _current?.View.CoreWebView2;
+        if (core == null) StartAddTab(url);
+        else core.Navigate(url);
+        Activate();
+    }
+
+    private void SaveLibraryData()
+    {
+        if (!_isPrivate) BrowserLibraryStore.Save();
+    }
+
+    private void HandleDownloadStarting(CoreWebView2DownloadStartingEventArgs e)
+    {
+        var operation = e.DownloadOperation;
+        string downloadsFolder = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+        var dialog = new SaveFileDialog
+        {
+            FileName = Path.GetFileName(operation.ResultFilePath),
+            InitialDirectory = Directory.Exists(downloadsFolder)
+                ? downloadsFolder
+                : Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+            OverwritePrompt = true
+        };
+
+        if (dialog.ShowDialog(this) != true)
+        {
+            e.Cancel = true;
+            return;
+        }
+
+        e.ResultFilePath = dialog.FileName;
+        e.Handled = true;
+
+        var entry = new DownloadEntry
+        {
+            FileName = Path.GetFileName(dialog.FileName),
+            FilePath = dialog.FileName,
+            StartedAt = DateTime.Now,
+            BytesReceived = operation.BytesReceived,
+            TotalBytesToReceive = operation.TotalBytesToReceive,
+            State = GetDownloadState(operation.State)
+        };
+        var downloads = _isPrivate ? _privateDownloads : BrowserLibraryStore.Downloads;
+        downloads.Insert(0, entry);
+        _activeDownloads[entry] = operation;
+        SaveDownloadData();
+
+        operation.BytesReceivedChanged += (_, _) => Dispatcher.BeginInvoke(new Action(() =>
+        {
+            entry.BytesReceived = operation.BytesReceived;
+            entry.TotalBytesToReceive = operation.TotalBytesToReceive;
+        }));
+        operation.StateChanged += (_, _) => Dispatcher.BeginInvoke(new Action(() =>
+        {
+            entry.State = GetDownloadState(operation.State);
+            entry.BytesReceived = operation.BytesReceived;
+            entry.TotalBytesToReceive = operation.TotalBytesToReceive;
+            if (operation.State != CoreWebView2DownloadState.InProgress)
+                _activeDownloads.Remove(entry);
+            SaveDownloadData();
+        }));
+    }
+
+    private readonly Dictionary<DownloadEntry, CoreWebView2DownloadOperation> _activeDownloads = new();
+
+    private void CancelDownload(DownloadEntry entry)
+    {
+        if (!_activeDownloads.TryGetValue(entry, out var operation)) return;
+        try
+        {
+            operation.Cancel();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                "Could not cancel this download.\n\n" + ex.Message,
+                "Butane downloads", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private static string GetDownloadState(CoreWebView2DownloadState state) =>
+        state switch
+        {
+            CoreWebView2DownloadState.InProgress => "IN PROGRESS",
+            CoreWebView2DownloadState.Completed => "COMPLETED",
+            _ => "INTERRUPTED"
+        };
+
+    private void SaveDownloadData()
+    {
+        if (_isPrivate) return;
+        try
+        {
+            BrowserLibraryStore.Save();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                "Could not save download details.\n\n" + ex.Message,
+                "Butane downloads", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
     }
 
     // Tiny starter blocklist. We will swap this for real filter lists later.
@@ -102,6 +306,7 @@ public partial class MainWindow : Window
         """;
 
     private readonly ObservableCollection<BrowserTab> _tabs = new();
+    private readonly ObservableCollection<DownloadEntry> _privateDownloads = new();
     private BrowserTab? _current;
     private int _blocked;
     private bool _blockTrackers = true;
@@ -127,7 +332,11 @@ public partial class MainWindow : Window
         }
 
         InitializeComponent();
-        if (!_isPrivate) NormalWindows.Add(this);
+        if (!_isPrivate)
+        {
+            NormalWindows.Add(this);
+            BrowserLibraryStore.Bookmarks.CollectionChanged += Bookmarks_CollectionChanged;
+        }
         ApplySettingsToWindow();
         if (_isPrivate)
         {
@@ -135,12 +344,19 @@ public partial class MainWindow : Window
             Resources["AccentBrush"] = new System.Windows.Media.SolidColorBrush(
                 System.Windows.Media.Color.FromRgb(181, 140, 255));
             PrivateModeLabel.Visibility = Visibility.Visible;
+            BookmarksManagerButton.IsEnabled = false;
+            HistoryManagerButton.IsEnabled = false;
         }
 
         TabList.ItemsSource = _tabs;
         Loaded += (_, _) => StartAddTab(null);
         Closing += Window_Closing;
-        Closed += (_, _) => NormalWindows.Remove(this);
+        Closed += (_, _) =>
+        {
+            NormalWindows.Remove(this);
+            if (!_isPrivate)
+                BrowserLibraryStore.Bookmarks.CollectionChanged -= Bookmarks_CollectionChanged;
+        };
     }
 
     // Dark title bar to match the interface (Windows 10 20H1+ and Windows 11).
@@ -204,6 +420,7 @@ public partial class MainWindow : Window
             if (tab == _current)
             {
                 AddressBar.Text = DisplayUrl(core.Source);
+                UpdateBookmarkButton();
                 UpdateSiteExceptionButton();
             }
         };
@@ -225,10 +442,14 @@ public partial class MainWindow : Window
         {
             if (!IsWeb(core.Source)) SetStatus(tab, "READY");
             else if (e.IsSuccess)
+            {
                 SetStatus(tab, $"LOADED IN {Stopwatch.GetElapsedTime(tab.LoadStart).TotalSeconds:0.00}S");
+                if (!_isPrivate) AddHistoryEntry(core.Source, core.DocumentTitle);
+            }
             else SetStatus(tab, "FAILED TO LOAD");
             if (tab == _current) UpdateNavButtons();
         };
+        core.DownloadStarting += (_, e) => HandleDownloadStarting(e);
 
         // Links that want a new window open in a new tab.
         core.NewWindowRequested += (_, e) =>
@@ -260,6 +481,7 @@ public partial class MainWindow : Window
 
         TabList.SelectedItem = tab;
         AddressBar.Text = DisplayUrl(tab.View.CoreWebView2?.Source);
+        UpdateBookmarkButton();
         UpdateSiteExceptionButton();
         StatusText.Text = tab.Status;
         UpdateWindowTitle();
@@ -459,6 +681,10 @@ public partial class MainWindow : Window
             case Key.L:
                 AddressBar.Focus();
                 AddressBar.SelectAll();
+                e.Handled = true;
+                break;
+            case Key.D:
+                ToggleBookmark();
                 e.Handled = true;
                 break;
             case >= Key.D1 and <= Key.D8:

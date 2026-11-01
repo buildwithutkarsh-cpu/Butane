@@ -33,6 +33,14 @@ You can also open `Butane.csproj` in Visual Studio 2022 and press F5.
   clear cookies when the last normal window closes. Cookie cleanup does not clear other site data.
 - Private windows use isolated, in-memory WebView2 profiles. Closing a private window discards
   its session. Private browsing does not hide activity from websites, your network, or your ISP.
+- Bookmark pages with **SAVE** or `Ctrl+D`; manage saved pages from the bookmarks library.
+- Successful normal-window visits appear in **HISTORY**, where entries can be reopened, removed,
+  or cleared. Private-window browsing is not recorded.
+- Downloads prompt for a save location and appear in **DOWNLOADS**, with progress, cancel, open,
+  and show-in-folder actions. Normal-window download records are saved; private-window records
+  remain only for that window session.
+- Normal-window bookmarks, browsing history, and download records are stored in
+  `%LOCALAPPDATA%\Butane\library.json`.
 - Bottom toolbar with page load status, **BACK**, **FORWARD**, and **RELOAD**.
 - Dark new-tab page.
 
@@ -47,19 +55,19 @@ You can also open `Butane.csproj` in Visual Studio 2022 and press F5.
 - `Ctrl+1`–`Ctrl+8` — select a tab by position
 - `Ctrl+9` — select the last tab
 - `Ctrl+L` — focus the address bar
+- `Ctrl+D` — bookmark the current page
 
 ## Project files
 
 - `MainWindow.xaml` and `MainWindow.xaml.cs` — browser layout and behavior
 - `BrowserTab.cs` — per-tab WebView2 and sidebar state
 - `BrowserSettings.cs` — saved browser preferences
+- `BrowserLibraryStore.cs` — persistent bookmarks, history, and download records
+- `LibraryWindow.xaml` and `LibraryWindow.xaml.cs` — bookmarks, history, and downloads manager
 - `SettingsWindow.xaml` and `SettingsWindow.xaml.cs` — cookie and tracking settings
 - `App.xaml` and `App.xaml.cs` — application resources and startup
 - `Butane.csproj` — project settings and WebView2 dependency
 
 ## Not implemented yet
 
-- Bookmarks
-- Browsing history
-- Downloads manager
 - Comprehensive filter lists such as EasyList or EasyPrivacy
