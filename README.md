@@ -85,6 +85,7 @@ Evergreen WebView2 Runtime from Microsoft's WebView2 page if it is missing.
 - `SettingsWindow.xaml` and `SettingsWindow.xaml.cs` — cookie and tracking settings
 - `App.xaml` and `App.xaml.cs` — application resources and startup
 - `Butane.csproj` — project settings and WebView2 dependency
+- `butane.ico` and the matching PNG/SVG files — application, window, and installer branding
 
 ## Not implemented yet
 
