@@ -19,9 +19,13 @@ You can also open `Butane.csproj` in Visual Studio 2022 and press F5.
 
 - Multi-tab browsing: add with "+ NEW", close with the x, and click a tab to switch
 - Multiple windows: use WINDOW / PRIVATE buttons or Ctrl+N / Ctrl+Shift+N
-- Private windows use isolated WebView2 private profiles and clear all profile data on close
-- Regular windows block third-party cookies; first-party cookies remain available for site features
-  (sites may still use first-party marketing cookies, which browsers cannot reliably classify)
+- Normal remembers first-party site data such as logins and preferences, while WebView2
+  Balanced tracking prevention and the Butane Shield block known trackers
+- Use ALLOW CURRENT SITE to bypass Butane's tracker blocklist for a site; WebView2's own
+  tracking prevention still applies. Exceptions are saved in the normal profile.
+- Private windows use an isolated, in-memory WebView2 profile; closing the window disposes its tabs
+  so WebView2 discards the session without deleting a profile directory that may still be locked.
+  Private remembers nothing locally, but websites, your network, and your ISP may still see activity.
 - Keyboard shortcuts: Ctrl+T (new tab), Ctrl+W (close tab), Ctrl+Shift+W (close window),
   Ctrl+Tab / Ctrl+Shift+Tab
   (switch tabs), Ctrl+1–8 (select tab), Ctrl+9 (last tab), and Ctrl+L (address bar)

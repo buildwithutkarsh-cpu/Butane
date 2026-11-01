@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.Text.Json;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
@@ -15,21 +16,29 @@ public partial class MainWindow : Window
 {
     private const string SearchUrl = "https://duckduckgo.com/?q=";
     private const string CloudflareDnsUrl = "https://cloudflare-dns.com/dns-query";
+    private static readonly string BrowserDataFolder = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Butane");
+    private static readonly string SiteExceptionsFile = Path.Combine(BrowserDataFolder, "site-exceptions.json");
 
     private static readonly Lazy<Task<CoreWebView2Environment>> PersistentBrowserEnvironment =
-        new(() => CreateBrowserEnvironmentAsync(null));
+        new(() => CreateBrowserEnvironmentAsync(BrowserDataFolder));
+    private static readonly HashSet<string> AllowedSites = new(StringComparer.OrdinalIgnoreCase);
+    private static bool _siteExceptionsLoaded;
 
     private readonly bool _isPrivate;
-    private readonly string? _privateUserDataFolder;
+    private readonly string? _privateProfileName;
     private readonly Task<CoreWebView2Environment> _browserEnvironment;
+    private readonly HashSet<string> _privateAllowedSites = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<Task> _tabInitializations = new();
     private bool _isClosing;
     private bool _privateCleanupComplete;
 
     private static Task<CoreWebView2Environment> CreateBrowserEnvironmentAsync(string? userDataFolder)
     {
+        if (userDataFolder != null) Directory.CreateDirectory(userDataFolder);
+
         var options = new CoreWebView2EnvironmentOptions(
-            $"--dns-over-https-mode=secure --dns-over-https-templates={CloudflareDnsUrl} --disable-third-party-cookies");
+            $"--dns-over-https-mode=secure --dns-over-https-templates={CloudflareDnsUrl}");
         return CoreWebView2Environment.CreateAsync(null, userDataFolder, options);
     }
 
@@ -58,7 +67,30 @@ public partial class MainWindow : Window
         </head>
         <body>
           <h1>BUTANE</h1>
-          <p>FAST. PRIVATE.</p>
+          <p>NORMAL REMEMBERS YOU ON SITES YOU VISIT, BUT BLOCKS TRACKERS.</p>
+          <p>TYPE IN THE BAR ABOVE TO START</p>
+        </body>
+        </html>
+        """;
+
+    private const string PrivateNewTabHtml = """
+        <!doctype html>
+        <html>
+        <head>
+        <meta charset="utf-8">
+        <title>PRIVATE WINDOW</title>
+        <style>
+          html, body { height: 100%; margin: 0; background: #111; color: #fff;
+                       font-family: Consolas, monospace; }
+          body { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+          h1 { color: #b58cff; font-size: 64px; letter-spacing: 6px; margin: 0 0 14px 0; }
+          p { color: #aaa; font-size: 13px; letter-spacing: 1px; margin: 6px; text-align: center; }
+        </style>
+        </head>
+        <body>
+          <h1>PRIVATE</h1>
+          <p>PRIVATE REMEMBERS NOTHING. COOKIES, LOGINS, AND CACHE ARE CLEARED WHEN THIS WINDOW CLOSES.</p>
+          <p>WEBSITES, YOUR NETWORK, AND YOUR ISP MAY STILL SEE YOUR ACTIVITY.</p>
           <p>TYPE IN THE BAR ABOVE TO START</p>
         </body>
         </html>
@@ -79,19 +111,22 @@ public partial class MainWindow : Window
         _isPrivate = isPrivate;
         if (_isPrivate)
         {
-            _privateUserDataFolder = Path.Combine(
-                Path.GetTempPath(), "Butane", "Private-" + Guid.NewGuid().ToString("N"));
-            _browserEnvironment = CreateBrowserEnvironmentAsync(_privateUserDataFolder);
+            _privateProfileName = "Private" + Guid.NewGuid().ToString("N");
+            _browserEnvironment = PersistentBrowserEnvironment.Value;
         }
         else
         {
             _browserEnvironment = PersistentBrowserEnvironment.Value;
+            LoadSiteExceptions();
         }
 
         InitializeComponent();
         if (_isPrivate)
         {
             Title = "PRIVATE WINDOW - Butane";
+            Resources["AccentBrush"] = new System.Windows.Media.SolidColorBrush(
+                System.Windows.Media.Color.FromRgb(181, 140, 255));
+            PrivateModeLabel.Visibility = Visibility.Visible;
         }
 
         TabList.ItemsSource = _tabs;
@@ -137,6 +172,7 @@ public partial class MainWindow : Window
             if (_isClosing || !_tabs.Contains(tab)) return;
             var controllerOptions = environment.CreateCoreWebView2ControllerOptions();
             controllerOptions.IsInPrivateModeEnabled = _isPrivate;
+            if (_privateProfileName != null) controllerOptions.ProfileName = _privateProfileName;
             await tab.View.EnsureCoreWebView2Async(environment, controllerOptions);
         }
         catch (Exception ex)
@@ -156,7 +192,11 @@ public partial class MainWindow : Window
 
         core.SourceChanged += (_, _) =>
         {
-            if (tab == _current) AddressBar.Text = DisplayUrl(core.Source);
+            if (tab == _current)
+            {
+                AddressBar.Text = DisplayUrl(core.Source);
+                UpdateSiteExceptionButton();
+            }
         };
         core.DocumentTitleChanged += (_, _) =>
         {
@@ -192,7 +232,7 @@ public partial class MainWindow : Window
         core.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All);
         core.WebResourceRequested += OnWebResourceRequested;
 
-        if (url == null) core.NavigateToString(NewTabHtml);
+        if (url == null) core.NavigateToString(_isPrivate ? PrivateNewTabHtml : NewTabHtml);
         else core.Navigate(url);
     }
 
@@ -206,6 +246,7 @@ public partial class MainWindow : Window
 
         TabList.SelectedItem = tab;
         AddressBar.Text = DisplayUrl(tab.View.CoreWebView2?.Source);
+        UpdateSiteExceptionButton();
         StatusText.Text = tab.Status;
         UpdateWindowTitle();
         UpdateNavButtons();
@@ -252,6 +293,37 @@ public partial class MainWindow : Window
     private void PrivateWindow_Click(object sender, RoutedEventArgs e)
     {
         OpenNewWindow(isPrivate: true);
+    }
+
+    private void SiteException_Click(object sender, RoutedEventArgs e)
+    {
+        string? host = GetCurrentSiteHost();
+        if (host == null) return;
+
+        var allowedSites = _isPrivate ? _privateAllowedSites : AllowedSites;
+        string? existingException = FindMatchingSiteException(allowedSites, host);
+        if (existingException != null) allowedSites.Remove(existingException);
+        else allowedSites.Add(host);
+
+        if (!_isPrivate)
+        {
+            try
+            {
+                Directory.CreateDirectory(BrowserDataFolder);
+                File.WriteAllText(SiteExceptionsFile, JsonSerializer.Serialize(AllowedSites.OrderBy(site => site)));
+            }
+            catch (Exception ex)
+            {
+                if (existingException != null) allowedSites.Add(existingException);
+                else allowedSites.Remove(host);
+
+                MessageBox.Show(
+                    "Could not save the site exception.\n\n" + ex.Message,
+                    "Butane", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        UpdateSiteExceptionButton();
     }
 
     private void CloseTab_Click(object sender, RoutedEventArgs e)
@@ -336,19 +408,6 @@ public partial class MainWindow : Window
             cleanupErrors.Add("Could not finish initializing every tab: " + ex.Message);
         }
 
-        var core = _tabs.Select(tab => tab.View.CoreWebView2).FirstOrDefault(view => view != null);
-        if (core != null)
-        {
-            try
-            {
-                await core.Profile.ClearBrowsingDataAsync(CoreWebView2BrowsingDataKinds.AllProfile);
-            }
-            catch (Exception ex)
-            {
-                cleanupErrors.Add("Could not clear private browsing data: " + ex.Message);
-            }
-        }
-
         foreach (var tab in _tabs)
         {
             WebHost.Children.Remove(tab.View);
@@ -356,18 +415,6 @@ public partial class MainWindow : Window
         }
         _tabs.Clear();
         _current = null;
-
-        if (_privateUserDataFolder != null && Directory.Exists(_privateUserDataFolder))
-        {
-            try
-            {
-                Directory.Delete(_privateUserDataFolder, recursive: true);
-            }
-            catch (Exception ex)
-            {
-                cleanupErrors.Add("Could not remove the temporary private profile: " + ex.Message);
-            }
-        }
 
         _privateCleanupComplete = true;
         if (cleanupErrors.Count > 0)
@@ -400,6 +447,7 @@ public partial class MainWindow : Window
     {
         if (!_blockTrackers) return;
         if (e.ResourceContext == CoreWebView2WebResourceContext.Document) return; // never block the page itself
+        if (sender is CoreWebView2 requestCore && IsCurrentSiteAllowed(requestCore)) return;
         if (!Uri.TryCreate(e.Request.Uri, UriKind.Absolute, out var uri)) return;
 
         string host = uri.Host;
@@ -435,6 +483,70 @@ public partial class MainWindow : Window
     {
         string title = string.IsNullOrWhiteSpace(_current?.Title) ? "Butane" : _current!.Title + " - Butane";
         Title = _isPrivate ? "PRIVATE WINDOW - " + title : title;
+    }
+
+    private string? GetCurrentSiteHost()
+    {
+        if (!Uri.TryCreate(_current?.View.CoreWebView2?.Source, UriKind.Absolute, out var uri) ||
+            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+            return null;
+
+        return uri.IdnHost.TrimEnd('.');
+    }
+
+    private bool IsCurrentSiteAllowed(CoreWebView2 core)
+    {
+        if (!Uri.TryCreate(core.Source, UriKind.Absolute, out var uri)) return false;
+        var allowedSites = _isPrivate ? _privateAllowedSites : AllowedSites;
+        return ContainsSiteOrSubdomain(allowedSites, uri.IdnHost);
+    }
+
+    private static bool ContainsSiteOrSubdomain(HashSet<string> sites, string host) =>
+        FindMatchingSiteException(sites, host) != null;
+
+    private static string? FindMatchingSiteException(HashSet<string> sites, string host) =>
+        sites.Where(site => host.Equals(site, StringComparison.OrdinalIgnoreCase) ||
+                            host.EndsWith("." + site, StringComparison.OrdinalIgnoreCase))
+             .OrderByDescending(site => site.Length)
+             .FirstOrDefault();
+
+    private static void LoadSiteExceptions()
+    {
+        if (_siteExceptionsLoaded) return;
+
+        _siteExceptionsLoaded = true;
+        if (!File.Exists(SiteExceptionsFile)) return;
+
+        try
+        {
+            var sites = JsonSerializer.Deserialize<string[]>(File.ReadAllText(SiteExceptionsFile)) ?? Array.Empty<string>();
+            foreach (var site in sites)
+            {
+                if (!string.IsNullOrWhiteSpace(site) &&
+                    !Uri.CheckHostName(site).Equals(UriHostNameType.Unknown))
+                    AllowedSites.Add(site.Trim().TrimEnd('.'));
+            }
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                "Could not load saved site exceptions.\n\n" + ex.Message,
+                "Butane", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private void UpdateSiteExceptionButton()
+    {
+        if (!IsLoaded) return;
+
+        string? host = GetCurrentSiteHost();
+        bool allowed = host != null && ContainsSiteOrSubdomain(
+            _isPrivate ? _privateAllowedSites : AllowedSites, host);
+        SiteExceptionButton.IsEnabled = host != null;
+        SiteExceptionButton.Content = allowed ? "REMOVE SITE EXCEPTION" : "ALLOW CURRENT SITE";
+        SiteExceptionButton.Foreground = allowed
+            ? System.Windows.Media.Brushes.LightGreen
+            : (System.Windows.Media.Brush)FindResource("DimBrush");
     }
 
     private void SetStatus(BrowserTab tab, string text)

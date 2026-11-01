@@ -24,8 +24,13 @@
                 <!-- Wordmark -->
                 <Border Grid.Row="0" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1">
                     <Grid>
-                        <TextBlock Text="BUTANE" Foreground="White" FontFamily="{StaticResource Mono}"
-                                   FontSize="22" FontWeight="Black" VerticalAlignment="Center" Margin="20,0,0,0" />
+                        <StackPanel Margin="20,0,0,0" VerticalAlignment="Center">
+                            <TextBlock Text="BUTANE" Foreground="White" FontFamily="{StaticResource Mono}"
+                                       FontSize="22" FontWeight="Black" />
+                            <TextBlock x:Name="PrivateModeLabel" Text="PRIVATE" Foreground="{DynamicResource AccentBrush}"
+                                       FontFamily="{StaticResource Mono}" FontSize="10" FontWeight="Bold"
+                                       Visibility="Collapsed" />
+                        </StackPanel>
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                             <Button Content="WINDOW" Style="{StaticResource FlatButton}" Foreground="{StaticResource DimBrush}"
                                     Width="68" Height="59" ToolTip="New window (Ctrl+N)" Click="NewWindow_Click" />
@@ -69,18 +74,30 @@
 
                 <!-- Shield section -->
                 <StackPanel Grid.Row="3">
-                    <Border BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0" Height="46">
-                        <TextBlock Text="SHIELD" Foreground="White" FontFamily="{StaticResource Mono}"
-                                   FontSize="12" FontWeight="Bold" VerticalAlignment="Center" Margin="20,0,0,0" />
+                    <Border BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0" Height="40">
+                        <TextBlock Text="TRACKING PROTECTION" Foreground="White" FontFamily="{StaticResource Mono}"
+                                   FontSize="11" FontWeight="Bold" VerticalAlignment="Center" Margin="20,0,0,0" />
                     </Border>
                     <ToggleButton x:Name="ShieldToggle" Style="{StaticResource FlatToggle}" Height="40"
                                   IsChecked="True" Click="ShieldToggle_Click">
                         <Grid Margin="20,0">
-                            <TextBlock Text="TRACKER BLOCKING" />
+                            <TextBlock Text="BUTANE SHIELD" />
                             <TextBlock x:Name="ShieldState" Text="ON" HorizontalAlignment="Right"
                                        Foreground="{StaticResource DimBrush}" />
                         </Grid>
                     </ToggleButton>
+                    <Border BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0" Height="40">
+                        <Grid Margin="20,0">
+                            <TextBlock Text="WEBVIEW PROTECTION" Foreground="White" FontFamily="{StaticResource Mono}"
+                                       FontSize="10" FontWeight="Bold" VerticalAlignment="Center" />
+                            <TextBlock Text="BALANCED" Foreground="{StaticResource DimBrush}" FontFamily="{StaticResource Mono}"
+                                       FontSize="10" FontWeight="Bold" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                        </Grid>
+                    </Border>
+                    <Button x:Name="SiteExceptionButton" Content="ALLOW CURRENT SITE"
+                            Style="{StaticResource FlatButton}" Height="38" IsEnabled="False"
+                            ToolTip="Bypass Butane's tracker blocklist for this site. WebView tracking prevention still applies."
+                            Click="SiteException_Click" />
                 </StackPanel>
             </Grid>
         </Border>
