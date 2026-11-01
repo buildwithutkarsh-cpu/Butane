@@ -18,7 +18,8 @@ You can also open `Butane.csproj` in Visual Studio 2022 and press F5.
 ## What works now
 
 - Sidebar tabs: add with "+ NEW", close with the x, click to switch
-- Top bar: type a web address or a search (DuckDuckGo)
+- Top bar: type a web address or search with DuckDuckGo
+- Browser DNS-over-HTTPS: Cloudflare in secure mode
 - BLOCKED counter and the SHIELD toggle (small starter blocklist of ad and tracker hosts)
 - Bottom bar: load time, BACK, FORWARD, RELOAD
 - Dark new tab page

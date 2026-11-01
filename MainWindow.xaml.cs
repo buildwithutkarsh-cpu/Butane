@@ -12,6 +12,14 @@ namespace Butane;
 public partial class MainWindow : Window
 {
     private const string SearchUrl = "https://duckduckgo.com/?q=";
+    private const string CloudflareDnsUrl = "https://cloudflare-dns.com/dns-query";
+
+    private static Task<CoreWebView2Environment> CreateBrowserEnvironmentAsync()
+    {
+        var options = new CoreWebView2EnvironmentOptions(
+            $"--dns-over-https-mode=secure --dns-over-https-templates={CloudflareDnsUrl}");
+        return CoreWebView2Environment.CreateAsync(null, null, options);
+    }
 
     // Tiny starter blocklist. We will swap this for real filter lists later.
     private static readonly string[] BlockedHosts =
@@ -45,6 +53,7 @@ public partial class MainWindow : Window
         """;
 
     private readonly ObservableCollection<BrowserTab> _tabs = new();
+    private readonly Task<CoreWebView2Environment> _browserEnvironment = CreateBrowserEnvironmentAsync();
     private BrowserTab? _current;
     private int _blocked;
     private bool _blockTrackers = true;
@@ -79,7 +88,7 @@ public partial class MainWindow : Window
 
         try
         {
-            await tab.View.EnsureCoreWebView2Async();
+            await tab.View.EnsureCoreWebView2Async(await _browserEnvironment);
         }
         catch (Exception ex)
         {
