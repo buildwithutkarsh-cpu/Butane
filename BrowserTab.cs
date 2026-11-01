@@ -7,6 +7,7 @@ namespace Butane;
 public class BrowserTab : INotifyPropertyChanged
 {
     private string _title = "";
+    private bool _isSleeping;
 
     public WebView2 View { get; } = new()
     {
@@ -18,6 +19,22 @@ public class BrowserTab : INotifyPropertyChanged
 
     // Timestamp taken when a navigation starts (used for the load-time readout).
     public long LoadStart { get; set; }
+
+    public bool ShouldBeSuspended { get; set; }
+
+    public bool SuspensionUpdateRunning { get; set; }
+
+    public bool IsSleeping
+    {
+        get => _isSleeping;
+        set
+        {
+            if (_isSleeping == value) return;
+            _isSleeping = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSleeping)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Display)));
+        }
+    }
 
     public string Title
     {
@@ -31,7 +48,9 @@ public class BrowserTab : INotifyPropertyChanged
     }
 
     // What the sidebar shows.
-    public string Display => string.IsNullOrWhiteSpace(_title) ? "NEW TAB" : _title.ToUpperInvariant();
+    public string Display =>
+        (string.IsNullOrWhiteSpace(_title) ? "NEW TAB" : _title.ToUpperInvariant()) +
+        (IsSleeping ? " [SLEEPING]" : "");
 
     public event PropertyChangedEventHandler? PropertyChanged;
 }

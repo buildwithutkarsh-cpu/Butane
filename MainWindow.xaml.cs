@@ -232,6 +232,8 @@ public partial class MainWindow : Window
         core.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All);
         core.WebResourceRequested += OnWebResourceRequested;
 
+        UpdateTabSuspension(tab, tab != _current);
+
         if (url == null) core.NavigateToString(_isPrivate ? PrivateNewTabHtml : NewTabHtml);
         else core.Navigate(url);
     }
@@ -242,7 +244,10 @@ public partial class MainWindow : Window
 
         _current = tab;
         foreach (var t in _tabs)
+        {
             t.View.Visibility = t == tab ? Visibility.Visible : Visibility.Collapsed;
+            UpdateTabSuspension(t, t != tab);
+        }
 
         TabList.SelectedItem = tab;
         AddressBar.Text = DisplayUrl(tab.View.CoreWebView2?.Source);
@@ -251,6 +256,80 @@ public partial class MainWindow : Window
         UpdateWindowTitle();
         UpdateNavButtons();
         if (focusView) tab.View.Focus();
+    }
+
+    private void UpdateTabSuspension(BrowserTab tab, bool shouldSuspend)
+    {
+        tab.ShouldBeSuspended = shouldSuspend;
+        if (tab.View.CoreWebView2 == null || tab.SuspensionUpdateRunning || _isClosing) return;
+
+        tab.SuspensionUpdateRunning = true;
+        _ = UpdateTabSuspensionAsync(tab);
+    }
+
+    private async Task UpdateTabSuspensionAsync(BrowserTab tab)
+    {
+        var core = tab.View.CoreWebView2;
+        if (core == null)
+        {
+            tab.SuspensionUpdateRunning = false;
+            return;
+        }
+
+        bool transitionFailed = false;
+        try
+        {
+            while (_tabs.Contains(tab) && !_isClosing)
+            {
+                if (tab.ShouldBeSuspended)
+                {
+                    if (core.IsSuspended)
+                    {
+                        tab.IsSleeping = true;
+                        break;
+                    }
+
+                    bool suspended = await core.TrySuspendAsync();
+                    if (!_tabs.Contains(tab) || _isClosing) break;
+
+                    if (!suspended && tab.ShouldBeSuspended)
+                    {
+                        tab.IsSleeping = false;
+                        SetStatus(tab, "COULD NOT SLEEP");
+                        transitionFailed = true;
+                        break;
+                    }
+
+                    tab.IsSleeping = suspended;
+                }
+                else
+                {
+                    if (core.IsSuspended) core.Resume();
+                    tab.IsSleeping = false;
+                }
+
+                if (tab.ShouldBeSuspended == core.IsSuspended) break;
+            }
+        }
+        catch (Exception ex)
+        {
+            transitionFailed = true;
+            if (_tabs.Contains(tab) && !_isClosing)
+            {
+                tab.IsSleeping = false;
+                SetStatus(tab, "TAB SLEEP FAILED");
+                MessageBox.Show(
+                    "Could not suspend or resume this background tab.\n\n" + ex.Message,
+                    "Butane", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+        finally
+        {
+            tab.SuspensionUpdateRunning = false;
+            if (!transitionFailed && _tabs.Contains(tab) && !_isClosing &&
+                tab.ShouldBeSuspended != core.IsSuspended)
+                UpdateTabSuspension(tab, tab.ShouldBeSuspended);
+        }
     }
 
     private void CloseTab(BrowserTab tab)

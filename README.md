@@ -18,6 +18,8 @@ You can also open `Butane.csproj` in Visual Studio 2022 and press F5.
 ## What works now
 
 - Multi-tab browsing: add with "+ NEW", close with the x, and click a tab to switch
+- Background tabs are suspended to reduce activity and memory use; the active tab resumes
+  when selected, and sleeping tabs are labeled in the sidebar
 - Multiple windows: use WINDOW / PRIVATE buttons or Ctrl+N / Ctrl+Shift+N
 - Normal remembers first-party site data such as logins and preferences, while WebView2
   Balanced tracking prevention and the Butane Shield block known trackers
