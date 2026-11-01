@@ -14,6 +14,21 @@ The WebView2 Runtime is generally installed with Windows 10/11. If the browser e
 does not start, install the Evergreen WebView2 Runtime from Microsoft's WebView2 page.
 You can also open `Butane.csproj` in Visual Studio 2022 and press F5.
 
+## Build an installer
+
+Install Inno Setup 6, then run this from PowerShell:
+
+    .\BuildInstaller.ps1
+
+The script publishes a self-contained `win-x64` build and creates
+`dist\Butane-Setup-1.0.0.exe`. To set another release version, pass for example
+`-AppVersion 1.2.0`. The installer creates Start Menu shortcuts, optionally creates a desktop
+shortcut, and registers an uninstaller in Windows Settings under **Installed apps**. Uninstalling
+removes the application but preserves your browser data in `%LOCALAPPDATA%\Butane`.
+
+The .NET runtime is included. The Microsoft Edge WebView2 Runtime is still required; install the
+Evergreen WebView2 Runtime from Microsoft's WebView2 page if it is missing.
+
 ## Features
 
 - Multi-tab browsing: use **+ NEW**, close tabs with **x**, and select tabs in the sidebar.
