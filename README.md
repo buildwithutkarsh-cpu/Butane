@@ -18,7 +18,9 @@ You can also open `Butane.csproj` in Visual Studio 2022 and press F5.
 
 - Multi-tab browsing: use **+ NEW**, close tabs with **x**, and select tabs in the sidebar.
 - Background tabs are suspended to reduce activity and memory use; selecting a sleeping tab
-  resumes it.
+  resumes it. Tabs stay awake while one of their popup windows is open.
+- Website popups open in linked tabs, preserving `window.opener` for sign-in and other
+  cross-window flows. Closing the popup releases the opener tab.
 - Multiple normal and private windows: use the **WINDOW** and **PRIVATE** buttons.
 - Search the web with DuckDuckGo or enter a web address in the address bar.
 - Cloudflare DNS-over-HTTPS in secure mode.
@@ -36,9 +38,10 @@ You can also open `Butane.csproj` in Visual Studio 2022 and press F5.
 - Bookmark pages with **SAVE** or `Ctrl+D`; manage saved pages from the bookmarks library.
 - Successful normal-window visits appear in **HISTORY**, where entries can be reopened, removed,
   or cleared. Private-window browsing is not recorded.
-- Downloads prompt for a save location and appear in **DOWNLOADS**, with progress, cancel, open,
-  and show-in-folder actions. Normal-window download records are saved; private-window records
-  remain only for that window session.
+- Downloads start automatically in the Downloads folder using the suggested filename (or a random
+  name if it is too long), and appear in **DOWNLOADS** with progress, cancel, open, and
+  show-in-folder actions. Normal-window download records are saved; private-window records remain
+  only for that window session.
 - Normal-window bookmarks, browsing history, and download records are stored in
   `%LOCALAPPDATA%\Butane\library.json`.
 - Bottom toolbar with page load status, **BACK**, **FORWARD**, and **RELOAD**.

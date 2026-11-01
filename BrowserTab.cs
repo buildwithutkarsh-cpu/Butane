@@ -24,6 +24,10 @@ public class BrowserTab : INotifyPropertyChanged
 
     public bool SuspensionUpdateRunning { get; set; }
 
+    public int OpenPopupCount { get; set; }
+
+    public BrowserTab? PopupOpener { get; set; }
+
     public bool IsSleeping
     {
         get => _isSleeping;

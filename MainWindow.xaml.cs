@@ -9,7 +9,6 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
-using Microsoft.Win32;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 
@@ -161,30 +160,27 @@ public partial class MainWindow : Window
     private void HandleDownloadStarting(CoreWebView2DownloadStartingEventArgs e)
     {
         var operation = e.DownloadOperation;
-        string downloadsFolder = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
-        var dialog = new SaveFileDialog
+        string filePath;
+        try
         {
-            FileName = Path.GetFileName(operation.ResultFilePath),
-            InitialDirectory = Directory.Exists(downloadsFolder)
-                ? downloadsFolder
-                : Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
-            OverwritePrompt = true
-        };
-
-        if (dialog.ShowDialog(this) != true)
+            filePath = GetDownloadFilePath(operation.ResultFilePath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
         {
             e.Cancel = true;
+            MessageBox.Show(
+                "Could not prepare the Downloads folder.\n\n" + ex.Message,
+                "Butane downloads", MessageBoxButton.OK, MessageBoxImage.Error);
             return;
         }
 
-        e.ResultFilePath = dialog.FileName;
+        e.ResultFilePath = filePath;
         e.Handled = true;
 
         var entry = new DownloadEntry
         {
-            FileName = Path.GetFileName(dialog.FileName),
-            FilePath = dialog.FileName,
+            FileName = Path.GetFileName(filePath),
+            FilePath = filePath,
             StartedAt = DateTime.Now,
             BytesReceived = operation.BytesReceived,
             TotalBytesToReceive = operation.TotalBytesToReceive,
@@ -209,6 +205,50 @@ public partial class MainWindow : Window
                 _activeDownloads.Remove(entry);
             SaveDownloadData();
         }));
+    }
+
+    private static string GetDownloadFilePath(string suggestedPath)
+    {
+        string downloadsFolder = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+        if (!Directory.Exists(downloadsFolder))
+            downloadsFolder = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+        Directory.CreateDirectory(downloadsFolder);
+
+        string fileName = Path.GetFileName(suggestedPath);
+        if (string.IsNullOrWhiteSpace(fileName)) fileName = "download";
+        string extension = Path.GetExtension(fileName);
+        if (extension.Length > 20) extension = "";
+        string path = Path.Combine(downloadsFolder, fileName);
+
+        if (path.Length > 240)
+            return GetUniqueRandomDownloadPath(downloadsFolder, extension);
+
+        if (File.Exists(path))
+        {
+            string baseName = Path.GetFileNameWithoutExtension(path);
+            int suffix = 1;
+            while (true)
+            {
+                string candidate = Path.Combine(downloadsFolder, $"{baseName} ({suffix++}){extension}");
+                if (candidate.Length > 240)
+                    return GetUniqueRandomDownloadPath(downloadsFolder, extension);
+                if (!File.Exists(candidate)) return candidate;
+            }
+        }
+
+        return path;
+    }
+
+    private static string GetUniqueRandomDownloadPath(string downloadsFolder, string extension)
+    {
+        while (true)
+        {
+            string path = Path.Combine(downloadsFolder, Guid.NewGuid().ToString("N") + extension);
+            if (path.Length > 240)
+                throw new PathTooLongException("The Downloads folder path is too long to save files safely.");
+            if (!File.Exists(path)) return path;
+        }
     }
 
     private readonly Dictionary<DownloadEntry, CoreWebView2DownloadOperation> _activeDownloads = new();
@@ -384,9 +424,13 @@ public partial class MainWindow : Window
             TaskScheduler.Default);
     }
 
-    private async Task AddTabAsync(string? url)
+    private async Task<bool> AddTabAsync(
+        string? url,
+        CoreWebView2NewWindowRequestedEventArgs? popupArgs = null,
+        BrowserTab? popupOpener = null,
+        BrowserTab? preparedTab = null)
     {
-        var tab = new BrowserTab();
+        var tab = preparedTab ?? new BrowserTab();
         WebHost.Children.Add(tab.View);
         _tabs.Add(tab);
         SelectTab(tab); // shows this tab's view before the engine starts
@@ -394,7 +438,7 @@ public partial class MainWindow : Window
         try
         {
             var environment = await _browserEnvironment;
-            if (_isClosing || !_tabs.Contains(tab)) return;
+            if (_isClosing || !_tabs.Contains(tab)) return false;
             var controllerOptions = environment.CreateCoreWebView2ControllerOptions();
             controllerOptions.IsInPrivateModeEnabled = _isPrivate;
             if (_privateProfileName != null) controllerOptions.ProfileName = _privateProfileName;
@@ -402,18 +446,24 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            if (_isClosing || !_tabs.Contains(tab)) return;
+            if (_isClosing || !_tabs.Contains(tab)) return false;
 
             MessageBox.Show(
                 "Could not start the browser engine (WebView2).\n\n" + ex.Message,
                 "Butane", MessageBoxButton.OK, MessageBoxImage.Error);
-            return;
+            CloseTab(tab);
+            return false;
         }
 
-        if (_isClosing || !_tabs.Contains(tab)) return;
+        if (_isClosing || !_tabs.Contains(tab)) return false;
 
         var core = tab.View.CoreWebView2;
         core.Profile.PreferredTrackingPreventionLevel = _settings.GetTrackingPreventionLevel();
+        if (popupArgs != null)
+        {
+            popupArgs.NewWindow = core;
+            tab.PopupOpener = popupOpener;
+        }
 
         core.SourceChanged += (_, _) =>
         {
@@ -451,12 +501,13 @@ public partial class MainWindow : Window
         };
         core.DownloadStarting += (_, e) => HandleDownloadStarting(e);
 
-        // Links that want a new window open in a new tab.
+        // Keep the new window linked to its opener so window.opener messaging works.
         core.NewWindowRequested += (_, e) =>
         {
-            e.Handled = true;
-            StartAddTab(e.Uri);
+            StartAddPopupTab(tab, e);
         };
+        core.WindowCloseRequested += (_, _) =>
+            Dispatcher.BeginInvoke(new Action(() => CloseTab(tab)));
 
         // Tracker blocking.
         core.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All);
@@ -464,8 +515,65 @@ public partial class MainWindow : Window
 
         UpdateTabSuspension(tab, tab != _current);
 
+        if (popupArgs != null) return true;
         if (url == null) core.NavigateToString(_isPrivate ? PrivateNewTabHtml : NewTabHtml);
         else core.Navigate(url);
+        return true;
+    }
+
+    private void StartAddPopupTab(BrowserTab opener, CoreWebView2NewWindowRequestedEventArgs args)
+    {
+        if (_isClosing)
+        {
+            args.Handled = true;
+            return;
+        }
+
+        opener.OpenPopupCount++;
+        UpdateTabSuspension(opener, shouldSuspend: false);
+        var popupTab = new BrowserTab { PopupOpener = opener };
+        var deferral = args.GetDeferral();
+        var initialization = AddPopupTabAsync(opener, popupTab, args, deferral);
+        _tabInitializations.Add(initialization);
+        _ = initialization.ContinueWith(
+            _ => Dispatcher.BeginInvoke(new Action(() => _tabInitializations.Remove(initialization))),
+            TaskScheduler.Default);
+    }
+
+    private async Task AddPopupTabAsync(
+        BrowserTab opener,
+        BrowserTab popupTab,
+        CoreWebView2NewWindowRequestedEventArgs args,
+        CoreWebView2Deferral deferral)
+    {
+        try
+        {
+            bool initialized = await AddTabAsync(null, args, opener, popupTab);
+            if (!initialized)
+            {
+                args.Handled = true;
+                CloseTab(popupTab);
+            }
+        }
+        catch (Exception ex)
+        {
+            args.Handled = true;
+            CloseTab(popupTab);
+            MessageBox.Show(
+                "Could not open this popup tab.\n\n" + ex.Message,
+                "Butane", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            deferral.Complete();
+        }
+    }
+
+    private void ReleasePopupHold(BrowserTab opener)
+    {
+        if (opener.OpenPopupCount > 0) opener.OpenPopupCount--;
+        if (_tabs.Contains(opener))
+            UpdateTabSuspension(opener, opener != _current);
     }
 
     private void SelectTab(BrowserTab tab, bool focusView = false)
@@ -491,7 +599,7 @@ public partial class MainWindow : Window
 
     private void UpdateTabSuspension(BrowserTab tab, bool shouldSuspend)
     {
-        tab.ShouldBeSuspended = shouldSuspend;
+        tab.ShouldBeSuspended = shouldSuspend && tab.OpenPopupCount == 0;
         if (tab.View.CoreWebView2 == null || tab.SuspensionUpdateRunning || _isClosing) return;
 
         tab.SuspensionUpdateRunning = true;
@@ -567,6 +675,12 @@ public partial class MainWindow : Window
     {
         int index = _tabs.IndexOf(tab);
         if (index < 0) return;
+
+        if (tab.PopupOpener is { } opener)
+        {
+            tab.PopupOpener = null;
+            ReleasePopupHold(opener);
+        }
 
         bool wasCurrent = tab == _current;
         if (wasCurrent) _current = null;
