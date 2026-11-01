@@ -98,6 +98,8 @@
                             Style="{StaticResource FlatButton}" Height="38" IsEnabled="False"
                             ToolTip="Bypass Butane's tracker blocklist for this site. WebView tracking prevention still applies."
                             Click="SiteException_Click" />
+                    <Button Content="SETTINGS" Style="{StaticResource FlatButton}" Height="38"
+                            Click="SettingsButton_Click" />
                 </StackPanel>
             </Grid>
         </Border>

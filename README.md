@@ -1,7 +1,7 @@
-# Butane (starter)
+# Butane
 
-A fast, private Windows browser. Dark monospace interface with a sidebar for tabs.
-Built with C#, WPF and WebView2 (the Microsoft Edge engine).
+Butane is a Windows desktop browser built with C#, WPF, and WebView2 (the Microsoft Edge
+engine). It has a dark monospace interface with a sidebar for tabs.
 
 ## Run it
 
@@ -10,45 +10,56 @@ Built with C#, WPF and WebView2 (the Microsoft Edge engine).
 
        dotnet run
 
-WebView2 Runtime is already installed on Windows 10/11. If you get an engine error,
-install the "Evergreen" runtime from Microsoft's WebView2 page.
-
+The WebView2 Runtime is generally installed with Windows 10/11. If the browser engine
+does not start, install the Evergreen WebView2 Runtime from Microsoft's WebView2 page.
 You can also open `Butane.csproj` in Visual Studio 2022 and press F5.
 
-## What works now
+## Features
 
-- Multi-tab browsing: add with "+ NEW", close with the x, and click a tab to switch
-- Background tabs are suspended to reduce activity and memory use; the active tab resumes
-  when selected, and sleeping tabs are labeled in the sidebar
-- Multiple windows: use WINDOW / PRIVATE buttons or Ctrl+N / Ctrl+Shift+N
-- Normal remembers first-party site data such as logins and preferences, while WebView2
-  Balanced tracking prevention and the Butane Shield block known trackers
-- Use ALLOW CURRENT SITE to bypass Butane's tracker blocklist for a site; WebView2's own
-  tracking prevention still applies. Exceptions are saved in the normal profile.
-- Private windows use an isolated, in-memory WebView2 profile; closing the window disposes its tabs
-  so WebView2 discards the session without deleting a profile directory that may still be locked.
-  Private remembers nothing locally, but websites, your network, and your ISP may still see activity.
-- Keyboard shortcuts: Ctrl+T (new tab), Ctrl+W (close tab), Ctrl+Shift+W (close window),
-  Ctrl+Tab / Ctrl+Shift+Tab
-  (switch tabs), Ctrl+1–8 (select tab), Ctrl+9 (last tab), and Ctrl+L (address bar)
-- Top bar: type a web address or search with DuckDuckGo
-- Browser DNS-over-HTTPS: Cloudflare in secure mode
-- BLOCKED counter and the SHIELD toggle (small starter blocklist of ad and tracker hosts)
-- Bottom bar: load time, BACK, FORWARD, RELOAD
-- Dark new tab page
+- Multi-tab browsing: use **+ NEW**, close tabs with **x**, and select tabs in the sidebar.
+- Background tabs are suspended to reduce activity and memory use; selecting a sleeping tab
+  resumes it.
+- Multiple normal and private windows: use the **WINDOW** and **PRIVATE** buttons.
+- Search the web with DuckDuckGo or enter a web address in the address bar.
+- Cloudflare DNS-over-HTTPS in secure mode.
+- Butane Shield blocks requests to a small built-in list of known ad and tracker hosts.
+  The **BLOCKED** counter shows blocked requests. This starter blocklist is not a replacement
+  for comprehensive filter lists.
+- **ALLOW CURRENT SITE** adds or removes a site exception for Butane Shield. Exceptions are
+  saved in the normal profile. WebView2 tracking prevention continues to apply to exceptions.
+- Settings are available from the sidebar and persist in
+  `%LOCALAPPDATA%\Butane\settings.json`. Choose whether to enable Butane Shield, select
+  WebView2 tracking prevention (**Off**, **Basic**, **Balanced**, or **Strict**), and optionally
+  clear cookies when the last normal window closes. Cookie cleanup does not clear other site data.
+- Private windows use isolated, in-memory WebView2 profiles. Closing a private window discards
+  its session. Private browsing does not hide activity from websites, your network, or your ISP.
+- Bottom toolbar with page load status, **BACK**, **FORWARD**, and **RELOAD**.
+- Dark new-tab page.
 
-## Files
+### Keyboard shortcuts
 
-- `MainWindow.xaml` - the layout (sidebar, top bar, page area, bottom bar)
-- `MainWindow.xaml.cs` - the logic (tabs, navigation, blocking)
-- `BrowserTab.cs` - one tab (its WebView2 and sidebar text)
-- `App.xaml` - colors, font and control styles
-- `App.xaml.cs` - app startup
-- `Butane.csproj` - project settings and the WebView2 package
+- `Ctrl+T` — new tab
+- `Ctrl+W` — close tab
+- `Ctrl+Shift+W` — close window
+- `Ctrl+N` — new normal window
+- `Ctrl+Shift+N` — new private window
+- `Ctrl+Tab` / `Ctrl+Shift+Tab` — switch tabs
+- `Ctrl+1`–`Ctrl+8` — select a tab by position
+- `Ctrl+9` — select the last tab
+- `Ctrl+L` — focus the address bar
 
-## Next steps
+## Project files
 
-1. Put the project in git (`git init`) before changing anything.
-2. Replace the starter blocklist with real filter lists (EasyList, EasyPrivacy).
-3. Tab sleeping.
-4. Settings, bookmarks, history.
+- `MainWindow.xaml` and `MainWindow.xaml.cs` — browser layout and behavior
+- `BrowserTab.cs` — per-tab WebView2 and sidebar state
+- `BrowserSettings.cs` — saved browser preferences
+- `SettingsWindow.xaml` and `SettingsWindow.xaml.cs` — cookie and tracking settings
+- `App.xaml` and `App.xaml.cs` — application resources and startup
+- `Butane.csproj` — project settings and WebView2 dependency
+
+## Not implemented yet
+
+- Bookmarks
+- Browsing history
+- Downloads manager
+- Comprehensive filter lists such as EasyList or EasyPrivacy

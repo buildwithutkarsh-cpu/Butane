@@ -9,6 +9,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using Microsoft.Web.WebView2.Core;
+using Microsoft.Web.WebView2.Wpf;
 
 namespace Butane;
 
@@ -24,6 +25,9 @@ public partial class MainWindow : Window
         new(() => CreateBrowserEnvironmentAsync(BrowserDataFolder));
     private static readonly HashSet<string> AllowedSites = new(StringComparer.OrdinalIgnoreCase);
     private static bool _siteExceptionsLoaded;
+    private static BrowserSettings _settings = new();
+    private static bool _settingsLoaded;
+    private static readonly HashSet<MainWindow> NormalWindows = new();
 
     private readonly bool _isPrivate;
     private readonly string? _privateProfileName;
@@ -32,6 +36,7 @@ public partial class MainWindow : Window
     private readonly HashSet<Task> _tabInitializations = new();
     private bool _isClosing;
     private bool _privateCleanupComplete;
+    private bool _closeAfterCookieCleanup;
 
     private static Task<CoreWebView2Environment> CreateBrowserEnvironmentAsync(string? userDataFolder)
     {
@@ -108,6 +113,7 @@ public partial class MainWindow : Window
 
     public MainWindow(bool isPrivate)
     {
+        EnsureSettingsLoaded();
         _isPrivate = isPrivate;
         if (_isPrivate)
         {
@@ -121,6 +127,8 @@ public partial class MainWindow : Window
         }
 
         InitializeComponent();
+        if (!_isPrivate) NormalWindows.Add(this);
+        ApplySettingsToWindow();
         if (_isPrivate)
         {
             Title = "PRIVATE WINDOW - Butane";
@@ -132,6 +140,7 @@ public partial class MainWindow : Window
         TabList.ItemsSource = _tabs;
         Loaded += (_, _) => StartAddTab(null);
         Closing += Window_Closing;
+        Closed += (_, _) => NormalWindows.Remove(this);
     }
 
     // Dark title bar to match the interface (Windows 10 20H1+ and Windows 11).
@@ -188,7 +197,7 @@ public partial class MainWindow : Window
         if (_isClosing || !_tabs.Contains(tab)) return;
 
         var core = tab.View.CoreWebView2;
-        core.Profile.PreferredTrackingPreventionLevel = CoreWebView2TrackingPreventionLevel.Balanced;
+        core.Profile.PreferredTrackingPreventionLevel = _settings.GetTrackingPreventionLevel();
 
         core.SourceChanged += (_, _) =>
         {
@@ -405,6 +414,13 @@ public partial class MainWindow : Window
         UpdateSiteExceptionButton();
     }
 
+    private void SettingsButton_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new SettingsWindow(_settings) { Owner = this };
+        if (dialog.ShowDialog() == true && dialog.SavedSettings is { } settings)
+            ApplySettingsToOpenWindows(settings);
+    }
+
     private void CloseTab_Click(object sender, RoutedEventArgs e)
     {
         if (sender is FrameworkElement { DataContext: BrowserTab tab }) CloseTab(tab);
@@ -471,7 +487,21 @@ public partial class MainWindow : Window
 
     private async void Window_Closing(object? sender, CancelEventArgs e)
     {
-        if (!_isPrivate || _privateCleanupComplete) return;
+        if (!_isPrivate)
+        {
+            if (_closeAfterCookieCleanup || !_settings.ClearCookiesOnExit || NormalWindows.Count != 1)
+                return;
+
+            e.Cancel = true;
+            if (_isClosing) return;
+
+            _isClosing = true;
+            IsEnabled = false;
+            await ClearCookiesAndCloseAsync();
+            return;
+        }
+
+        if (_privateCleanupComplete) return;
 
         e.Cancel = true;
         if (_isClosing) return;
@@ -504,6 +534,50 @@ public partial class MainWindow : Window
         }
 
         Close();
+    }
+
+    private async Task ClearCookiesAndCloseAsync()
+    {
+        try
+        {
+            await Task.WhenAll(_tabInitializations.ToArray());
+            var core = _tabs.Select(tab => tab.View.CoreWebView2).FirstOrDefault(view => view != null);
+            if (core != null)
+            {
+                await core.Profile.ClearBrowsingDataAsync(CoreWebView2BrowsingDataKinds.Cookies);
+            }
+            else
+            {
+                var temporaryView = new WebView2();
+                try
+                {
+                    await temporaryView.EnsureCoreWebView2Async(await _browserEnvironment);
+                    await temporaryView.CoreWebView2.Profile.ClearBrowsingDataAsync(
+                        CoreWebView2BrowsingDataKinds.Cookies);
+                }
+                finally
+                {
+                    temporaryView.Dispose();
+                }
+            }
+
+            _closeAfterCookieCleanup = true;
+            Close();
+        }
+        catch (Exception ex)
+        {
+            _isClosing = false;
+            IsEnabled = true;
+            var closeAnyway = MessageBox.Show(
+                "Could not clear cookies before closing. Cookies may remain on disk.\n\n" +
+                ex.Message + "\n\nClose anyway?",
+                "Butane cookie cleanup", MessageBoxButton.YesNo, MessageBoxImage.Error);
+            if (closeAnyway == MessageBoxResult.Yes)
+            {
+                _closeAfterCookieCleanup = true;
+                Close();
+            }
+        }
     }
 
     private void CycleTabs(int direction)
@@ -545,8 +619,53 @@ public partial class MainWindow : Window
 
     private void ShieldToggle_Click(object sender, RoutedEventArgs e)
     {
-        _blockTrackers = ShieldToggle.IsChecked == true;
+        var settings = new BrowserSettings
+        {
+            BlockTrackers = ShieldToggle.IsChecked == true,
+            ClearCookiesOnExit = _settings.ClearCookiesOnExit,
+            TrackingPreventionLevel = _settings.TrackingPreventionLevel
+        };
+        try
+        {
+            BrowserSettingsStore.Save(settings);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                "Could not save the Shield setting.\n\n" + ex.Message,
+                "Butane settings", MessageBoxButton.OK, MessageBoxImage.Error);
+            ApplySettingsToWindow();
+            return;
+        }
+
+        ApplySettingsToOpenWindows(settings);
+    }
+
+    private static void EnsureSettingsLoaded()
+    {
+        if (_settingsLoaded) return;
+        _settings = BrowserSettingsStore.Load();
+        _settingsLoaded = true;
+    }
+
+    private static void ApplySettingsToOpenWindows(BrowserSettings settings)
+    {
+        _settings = settings;
+        foreach (var window in Application.Current.Windows.OfType<MainWindow>())
+            window.ApplySettingsToWindow();
+    }
+
+    private void ApplySettingsToWindow()
+    {
+        _blockTrackers = _settings.BlockTrackers;
+        ShieldToggle.IsChecked = _blockTrackers;
         ShieldState.Text = _blockTrackers ? "ON" : "OFF";
+        foreach (var tab in _tabs)
+        {
+            if (tab.View.CoreWebView2 != null)
+                tab.View.CoreWebView2.Profile.PreferredTrackingPreventionLevel =
+                    _settings.GetTrackingPreventionLevel();
+        }
     }
 
     // ---------- Toolbar and address bar ----------
