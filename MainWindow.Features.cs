@@ -82,7 +82,7 @@ public partial class MainWindow
                 using var doc = JsonDocument.Parse(e.WebMessageAsJson);
                 var root = doc.RootElement;
                 if (root.ValueKind != JsonValueKind.Object ||
-                    !root.TryGetProperty("shortcut", out _) ||
+                    !root.TryGetProperty("shortcut", out JsonElement shortcut) ||
                     root.GetProperty("key").GetString() is not { } name ||
                     KeyFromName(name) is not { } key)
                     return;
