@@ -90,3 +90,17 @@ Evergreen WebView2 Runtime from Microsoft's WebView2 page if it is missing.
 ## Not implemented yet
 
 - Comprehensive filter lists such as EasyList or EasyPrivacy
+
+## Browser features (added)
+
+- Find in page (Ctrl+F), zoom (Ctrl +/-/0), print (Ctrl+P), save as PDF, screenshot, reader mode, full screen (F11)
+- Reopen closed tab (Ctrl+Shift+T), tab pinning, mute, duplicate, drag to reorder, tab favicons and audio indicators
+- Bookmarks bar (Ctrl+Shift+B), import from Chrome/Edge/Brave, export to HTML
+- Address bar suggestions from bookmarks, history and your search engine; padlock for HTTPS/HTTP
+- Settings: home page, search engine (DuckDuckGo, Google, Bing, Brave, Ecosia), restore last session, password saving and autofill
+- Developer tools (F12), view source (Ctrl+U), task manager (Shift+Esc), clear browsing data (Ctrl+Shift+Del)
+- Main menu (MENU button) lists every command; shortcuts also work while a web page has focus
+
+## Building without Windows
+
+Push to GitHub. The workflow in `.github/workflows/build.yml` builds on a Windows runner and uploads the portable app and the installer as artifacts (Actions tab).
