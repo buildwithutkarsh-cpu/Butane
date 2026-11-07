@@ -20,12 +20,11 @@ namespace Butane;
 public partial class MainWindow
 {
     private static readonly HttpClient SuggestHttp = new() { Timeout = TimeSpan.FromSeconds(3) };
-    private static readonly string SessionFile = Path.Combine(BrowserDataFolder, "session.json");
+    private static string SessionFile => Path.Combine(BrowserDataFolder, "session.json");
     private static bool _sessionHandled;
 
     private readonly Stack<string> _closedTabs = new();
     private CancellationTokenSource? _suggestCts;
-    private bool _suppressSuggest;
     private bool _isFullscreen;
     private WindowState _stateBeforeFullscreen = WindowState.Normal;
     private WindowStyle _styleBeforeFullscreen = WindowStyle.SingleBorderWindow;
@@ -74,17 +73,81 @@ public partial class MainWindow
         core.IsDocumentPlayingAudioChanged += (_, _) => tab.IsPlayingAudio = core.IsDocumentPlayingAudio;
         core.ContainsFullScreenElementChanged += (_, _) => SetFullscreen(core.ContainsFullScreenElement);
 
-        // Keyboard shortcuts keep working while a web page has focus.
-        tab.View.CoreWebView2Controller.AcceleratorKeyPressed += (_, e) =>
+        // Keyboard shortcuts keep working while a web page has focus: a small script forwards them.
+        _ = core.AddScriptToExecuteOnDocumentCreatedAsync(ShortcutScript);
+        core.WebMessageReceived += (_, e) =>
         {
-            if (e.KeyEventKind is not (CoreWebView2KeyEventKind.KeyDown or CoreWebView2KeyEventKind.SystemKeyDown))
-                return;
+            try
+            {
+                using var doc = JsonDocument.Parse(e.WebMessageAsJson);
+                var root = doc.RootElement;
+                if (root.ValueKind != JsonValueKind.Object ||
+                    !root.TryGetProperty("shortcut", out _) ||
+                    root.GetProperty("key").GetString() is not { } name ||
+                    KeyFromName(name) is not { } key)
+                    return;
 
-            Key key = KeyInterop.KeyFromVirtualKey((int)e.VirtualKey);
-            bool ctrl = (GetKeyState(0x11) & 0x8000) != 0;
-            bool shift = (GetKeyState(0x10) & 0x8000) != 0;
-            bool alt = (GetKeyState(0x12) & 0x8000) != 0;
-            if (HandleShortcut(key, ctrl, shift, alt)) e.Handled = true;
+                HandleShortcut(
+                    key,
+                    root.GetProperty("ctrl").GetBoolean(),
+                    root.GetProperty("shift").GetBoolean(),
+                    root.GetProperty("alt").GetBoolean());
+            }
+            catch (Exception ex) when (ex is JsonException or InvalidOperationException or KeyNotFoundException)
+            {
+                // Not one of our messages.
+            }
+        };
+    }
+
+    private const string ShortcutScript = """
+        (function () {
+          var letters = 'nwtldfpuhjrob';
+          window.addEventListener('keydown', function (e) {
+            var k = e.key, lk = k.length === 1 ? k.toLowerCase() : k;
+            var ctrl = e.ctrlKey || e.metaKey, alt = e.altKey, shift = e.shiftKey, send = false;
+            if (k === 'F5' || k === 'F11' || k === 'F12') send = true;
+            else if (ctrl && !alt) {
+              send = k === 'Tab' || k === 'PageDown' || k === 'PageUp' ||
+                     (lk.length === 1 && (letters.indexOf(lk) >= 0 || '0123456789+=-_'.indexOf(lk) >= 0));
+            } else if (alt && !ctrl) {
+              send = k === 'ArrowLeft' || k === 'ArrowRight' || k === 'Home';
+            }
+            if (!send) return;
+            e.preventDefault();
+            e.stopPropagation();
+            window.chrome.webview.postMessage({ shortcut: true, key: k, ctrl: ctrl, shift: shift, alt: alt });
+          }, true);
+        })();
+        """;
+
+    private static Key? KeyFromName(string name)
+    {
+        if (name.Length == 1)
+        {
+            char c = char.ToUpperInvariant(name[0]);
+            if (c is >= 'A' and <= 'Z') return Key.A + (c - 'A');
+            if (c is >= '0' and <= '9') return Key.D0 + (c - '0');
+            return c switch
+            {
+                '+' or '=' => Key.OemPlus,
+                '-' or '_' => Key.OemMinus,
+                _ => null
+            };
+        }
+
+        return name switch
+        {
+            "Tab" => Key.Tab,
+            "PageDown" => Key.PageDown,
+            "PageUp" => Key.PageUp,
+            "F5" => Key.F5,
+            "F11" => Key.F11,
+            "F12" => Key.F12,
+            "ArrowLeft" => Key.Left,
+            "ArrowRight" => Key.Right,
+            "Home" => Key.Home,
+            _ => null
         };
     }
 
@@ -580,7 +643,7 @@ public partial class MainWindow
 
     private async void AddressBar_TextChanged(object sender, TextChangedEventArgs e)
     {
-        if (_suppressSuggest || !AddressBar.IsKeyboardFocused) return;
+        if (!AddressBar.IsKeyboardFocused) return;
 
         string text = AddressBar.Text.Trim();
         if (text.Length == 0) { CloseSuggestions(); return; }
