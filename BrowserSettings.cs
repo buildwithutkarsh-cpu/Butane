@@ -10,6 +10,23 @@ internal sealed class BrowserSettings
     public bool BlockTrackers { get; set; } = true;
     public bool ClearCookiesOnExit { get; set; }
     public string TrackingPreventionLevel { get; set; } = "Balanced";
+    public string HomePage { get; set; } = "";
+    public string SearchEngine { get; set; } = "DuckDuckGo";
+    public bool ShowBookmarksBar { get; set; } = true;
+    public bool RestoreSession { get; set; }
+    public bool SearchSuggestions { get; set; } = true;
+    public bool SavePasswords { get; set; } = true;
+    public bool Autofill { get; set; } = true;
+
+    public string GetSearchUrl() =>
+        SearchEngine switch
+        {
+            "Google" => "https://www.google.com/search?q=",
+            "Bing" => "https://www.bing.com/search?q=",
+            "Brave" => "https://search.brave.com/search?q=",
+            "Ecosia" => "https://www.ecosia.org/search?q=",
+            _ => "https://duckduckgo.com/?q="
+        };
 
     public CoreWebView2TrackingPreventionLevel GetTrackingPreventionLevel() =>
         TrackingPreventionLevel switch
