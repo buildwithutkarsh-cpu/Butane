@@ -1,0 +1,44 @@
+name: Build Butane
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Builda
+        run: dotnet build Butane.csproj --configuration Release
+
+      - name: Publish self-contained app
+        run: >
+          dotnet publish Butane.csproj --configuration Release --runtime win-x64
+          --self-contained true --output publish -p:UseAppHost=true
+
+      - name: Upload portable build
+        uses: actions/upload-artifact@v4
+        with:
+          name: Butane-portable-win-x64
+          path: publish/
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build installer
+        shell: pwsh
+        run: ./BuildInstaller.ps1
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Butane-Setup
+          path: dist/*.exe
