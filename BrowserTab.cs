@@ -57,6 +57,11 @@ public class BrowserTab : INotifyPropertyChanged
 
     public int OpenPopupCount { get; set; }
 
+    // Butane Shield state for this tab.
+    public int BlockedCount { get; set; }
+    public string TopHost { get; set; } = "";
+    public bool SiteAllowed { get; set; }
+
     public BrowserTab? PopupOpener { get; set; }
 
     public bool IsSleeping

@@ -39,9 +39,17 @@ Evergreen WebView2 Runtime from Microsoft's WebView2 page if it is missing.
 - Multiple normal and private windows: use the **WINDOW** and **PRIVATE** buttons.
 - Search the web with DuckDuckGo or enter a web address in the address bar.
 - Cloudflare DNS-over-HTTPS in secure mode.
-- Butane Shield blocks requests to a small built-in list of known ad and tracker hosts.
-  The **BLOCKED** counter shows blocked requests. This starter blocklist is not a replacement
-  for comprehensive filter lists.
+- Butane Shield blocks requests to known ad and tracker hosts. It starts with a small built-in
+  list, then loads EasyList, EasyPrivacy and Peter Lowe's list from `%LOCALAPPDATA%\Butane\filters`
+  (refreshed weekly unless turned off in Settings). Any extra `.txt` list you drop in that folder
+  is loaded too. Only whole-host rules are used: hosts files, plain domain lists, and simple
+  `||example.com^` rules. Path, regex, cosmetic and option-restricted rules are skipped, so this is
+  not a full ad blocker. First-party requests are never blocked. The **BLOCKED** counter shows
+  requests blocked on the current page.
+- Sites cannot request location, notifications, clipboard-read, motion/other sensors or multiple
+  automatic downloads (can be turned off in Settings). Camera and microphone still prompt.
+- Search suggestions are off by default, are never requested from private windows, and use the
+  system DNS resolver rather than the secure-DNS setting.
 - **ALLOW CURRENT SITE** adds or removes a site exception for Butane Shield. Exceptions are
   saved in the normal profile. WebView2 tracking prevention continues to apply to exceptions.
 - Settings are available from the sidebar and persist in
@@ -89,7 +97,7 @@ Evergreen WebView2 Runtime from Microsoft's WebView2 page if it is missing.
 
 ## Not implemented yet
 
-- Comprehensive filter lists such as EasyList or EasyPrivacy
+- Full Adblock rule support (path/regex rules, `$domain=`, cosmetic filtering)
 
 ## Browser features (added)
 

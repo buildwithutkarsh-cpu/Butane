@@ -18,6 +18,8 @@ public partial class SettingsWindow : Window
         RestoreSessionCheckBox.IsChecked = settings.RestoreSession;
         SavePasswordsCheckBox.IsChecked = settings.SavePasswords;
         AutofillCheckBox.IsChecked = settings.Autofill;
+        UpdateFilterListsCheckBox.IsChecked = settings.UpdateFilterLists;
+        BlockSensitivePermissionsCheckBox.IsChecked = settings.BlockSensitivePermissions;
         SearchEngineComboBox.SelectedItem = SearchEngineComboBox.Items
             .OfType<ComboBoxItem>()
             .FirstOrDefault(item => string.Equals(item.Content?.ToString(), settings.SearchEngine,
@@ -42,7 +44,9 @@ public partial class SettingsWindow : Window
             ShowBookmarksBar = ShowBookmarksBarCheckBox.IsChecked == true,
             RestoreSession = RestoreSessionCheckBox.IsChecked == true,
             SavePasswords = SavePasswordsCheckBox.IsChecked == true,
-            Autofill = AutofillCheckBox.IsChecked == true
+            Autofill = AutofillCheckBox.IsChecked == true,
+            UpdateFilterLists = UpdateFilterListsCheckBox.IsChecked == true,
+            BlockSensitivePermissions = BlockSensitivePermissionsCheckBox.IsChecked == true
         };
 
         try

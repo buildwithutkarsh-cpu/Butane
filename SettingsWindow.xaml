@@ -109,6 +109,18 @@
                       Foreground="White" FontFamily="{StaticResource Mono}" FontSize="13" FontWeight="Bold"
                       Margin="0,0,0,8" />
             <TextBlock Text="Password and autofill changes apply to tabs opened after saving. Not available in private windows."
+                       Foreground="{StaticResource DimBrush}" TextWrapping="Wrap" Margin="24,0,0,18" />
+
+            <CheckBox x:Name="UpdateFilterListsCheckBox" Content="Download and refresh Shield filter lists weekly"
+                      Foreground="White" FontFamily="{StaticResource Mono}" FontSize="13" FontWeight="Bold"
+                      Margin="0,0,0,8" />
+            <TextBlock Text="Contacts the list servers (EasyList, EasyPrivacy, Peter Lowe) about once a week. When off, Shield uses the lists already on disk, or its small built-in list. Takes effect the next time Butane starts."
+                       Foreground="{StaticResource DimBrush}" TextWrapping="Wrap" Margin="24,0,0,18" />
+
+            <CheckBox x:Name="BlockSensitivePermissionsCheckBox" Content="Block location, notification, clipboard-read and sensor requests"
+                      Foreground="White" FontFamily="{StaticResource Mono}" FontSize="13" FontWeight="Bold"
+                      Margin="0,0,0,8" />
+            <TextBlock Text="Sites cannot ask for these. Camera and microphone still show the normal prompt."
                        Foreground="{StaticResource DimBrush}" TextWrapping="Wrap" Margin="24,0,0,0" />
         </StackPanel>
         </ScrollViewer>

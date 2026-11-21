@@ -14,9 +14,11 @@ internal sealed class BrowserSettings
     public string SearchEngine { get; set; } = "DuckDuckGo";
     public bool ShowBookmarksBar { get; set; } = true;
     public bool RestoreSession { get; set; }
-    public bool SearchSuggestions { get; set; } = true;
+    public bool SearchSuggestions { get; set; }
     public bool SavePasswords { get; set; } = true;
     public bool Autofill { get; set; } = true;
+    public bool UpdateFilterLists { get; set; } = true;
+    public bool BlockSensitivePermissions { get; set; } = true;
 
     public string GetSearchUrl() =>
         SearchEngine switch

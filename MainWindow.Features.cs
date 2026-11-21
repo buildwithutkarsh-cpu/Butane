@@ -19,7 +19,12 @@ namespace Butane;
 // dev tools, screenshots, import/export bookmarks, clear data, main menu, global shortcuts.
 public partial class MainWindow
 {
-    private static readonly HttpClient SuggestHttp = new() { Timeout = TimeSpan.FromSeconds(3) };
+    // Suggestion requests send what you type to your search engine. They use their own client with
+    // no cookies, and are never made from private windows or when the setting is off.
+    private static readonly HttpClient SuggestHttp = new(new SocketsHttpHandler { UseCookies = false })
+    {
+        Timeout = TimeSpan.FromSeconds(3)
+    };
     private static string SessionFile => Path.Combine(BrowserDataFolder, "session.json");
     private static bool _sessionHandled;
 
@@ -667,7 +672,7 @@ public partial class MainWindow
         items.Add(new Suggestion(looksLikeAddress ? $"OPEN  {text}" : $"SEARCH  {text}", typedUrl));
         ShowSuggestions(items);
 
-        if (!_settings.SearchSuggestions || text.Length < 2 || looksLikeAddress) return;
+        if (_isPrivate || !_settings.SearchSuggestions || text.Length < 2 || looksLikeAddress) return;
 
         _suggestCts?.Cancel();
         var cts = _suggestCts = new CancellationTokenSource();

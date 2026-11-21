@@ -9,6 +9,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
+using System.Windows.Threading;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 
@@ -291,13 +292,23 @@ public partial class MainWindow : Window
         }
     }
 
-    // Tiny starter blocklist. We will swap this for real filter lists later.
-    private static readonly string[] BlockedHosts =
+    // Request types sent to the Shield handler. Stylesheets and fonts are skipped on purpose: they
+    // are rarely trackers, and every extra type adds a trip through the handler per request.
+    // Documents are included only so ad/tracker iframes can be blocked; the handler never blocks
+    // the page the user is navigating to.
+    private static readonly CoreWebView2WebResourceContext[] ShieldContexts =
     {
-        "doubleclick.net", "googlesyndication.com", "googleadservices.com",
-        "google-analytics.com", "adservice.google.com", "connect.facebook.net",
-        "scorecardresearch.com", "hotjar.com", "taboola.com", "outbrain.com",
-        "adnxs.com", "criteo.com", "amazon-adsystem.com"
+        CoreWebView2WebResourceContext.Document,
+        CoreWebView2WebResourceContext.Script,
+        CoreWebView2WebResourceContext.XmlHttpRequest,
+        CoreWebView2WebResourceContext.Fetch,
+        CoreWebView2WebResourceContext.Image,
+        CoreWebView2WebResourceContext.Media,
+        CoreWebView2WebResourceContext.Ping,
+        CoreWebView2WebResourceContext.EventSource,
+        CoreWebView2WebResourceContext.WebSocket,
+        CoreWebView2WebResourceContext.CspViolationReport,
+        CoreWebView2WebResourceContext.Other
     };
 
     private const string NewTabHtml = """
@@ -348,7 +359,7 @@ public partial class MainWindow : Window
     private readonly ObservableCollection<BrowserTab> _tabs = new();
     private readonly ObservableCollection<DownloadEntry> _privateDownloads = new();
     private BrowserTab? _current;
-    private int _blocked;
+    private bool _blockedTextPending;
     private bool _blockTrackers = true;
 
     public MainWindow()
@@ -468,6 +479,7 @@ public partial class MainWindow : Window
 
         core.SourceChanged += (_, _) =>
         {
+            SetTabTopSite(tab, core.Source);
             if (tab == _current)
             {
                 AddressBar.Text = DisplayUrl(core.Source);
@@ -484,8 +496,15 @@ public partial class MainWindow : Window
         {
             if (tab == _current) UpdateNavButtons();
         };
-        core.NavigationStarting += (_, _) =>
+        core.NavigationStarting += (_, a) =>
         {
+            SetTabTopSite(tab, a.Uri);
+            if (!a.IsRedirected)
+            {
+                tab.BlockedCount = 0;
+                if (tab == _current) QueueBlockedCountUpdate();
+            }
+
             tab.LoadStart = Stopwatch.GetTimestamp();
             SetStatus(tab, "LOADING...");
         };
@@ -515,9 +534,14 @@ public partial class MainWindow : Window
         core.WindowCloseRequested += (_, _) =>
             Dispatcher.BeginInvoke(new Action(() => CloseTab(tab)));
 
-        // Tracker blocking.
-        core.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All);
-        core.WebResourceRequested += OnWebResourceRequested;
+        // Tracker blocking (Butane Shield).
+        foreach (var context in ShieldContexts)
+            core.AddWebResourceRequestedFilter("*", context);
+        core.WebResourceRequested += (_, e) => OnWebResourceRequested(tab, core, e);
+        SetTabTopSite(tab, core.Source);
+
+        // Sensitive permission policy.
+        core.PermissionRequested += (_, e) => HandlePermissionRequested(e);
 
         UpdateTabSuspension(tab, tab != _current);
 
@@ -597,6 +621,7 @@ public partial class MainWindow : Window
         AddressBar.Text = DisplayUrl(tab.View.CoreWebView2?.Source);
         UpdateBookmarkButton();
         UpdateSiteExceptionButton();
+        BlockedCount.Text = tab.BlockedCount.ToString();
         StatusText.Text = tab.Status;
         UpdateWindowTitle();
         UpdateNavButtons();
@@ -757,6 +782,8 @@ public partial class MainWindow : Window
         }
 
         UpdateSiteExceptionButton();
+        foreach (var window in Application.Current.Windows.OfType<MainWindow>())
+            window.RefreshSiteAllowance();
     }
 
     private void SettingsButton_Click(object sender, RoutedEventArgs e)
@@ -909,24 +936,87 @@ public partial class MainWindow : Window
 
     // ---------- Tracker blocking ----------
 
-    private void OnWebResourceRequested(object? sender, CoreWebView2WebResourceRequestedEventArgs e)
+    // Called for every request type in ShieldContexts. Runs on the UI thread, so it must stay cheap:
+    // no allocations on the common path except the host lookup, and no per-request UI updates.
+    private void OnWebResourceRequested(BrowserTab tab, CoreWebView2 core, CoreWebView2WebResourceRequestedEventArgs e)
     {
-        if (!_blockTrackers) return;
-        if (e.ResourceContext == CoreWebView2WebResourceContext.Document) return; // never block the page itself
-        if (sender is CoreWebView2 requestCore && IsCurrentSiteAllowed(requestCore)) return;
-        if (!Uri.TryCreate(e.Request.Uri, UriKind.Absolute, out var uri)) return;
+        if (!_blockTrackers || tab.SiteAllowed) return;
 
-        string host = uri.Host;
-        foreach (var blocked in BlockedHosts)
+        string top = tab.TopHost;
+        // Never block a document request while we do not know the page being loaded.
+        if (top.Length == 0 && e.ResourceContext == CoreWebView2WebResourceContext.Document) return;
+
+        if (!Uri.TryCreate(e.Request.Uri, UriKind.Absolute, out var uri)) return;
+        string scheme = uri.Scheme;
+        if (scheme != Uri.UriSchemeHttp && scheme != Uri.UriSchemeHttps && scheme != "ws" && scheme != "wss")
+            return;
+
+        string host = uri.IdnHost;
+        // First-party requests (the site itself, its subdomains, or its parent domain) are never blocked.
+        if (top.Length > 0 && IsSameSite(host, top)) return;
+        if (!ShieldEngine.Instance.IsBlocked(host)) return;
+
+        e.Response = core.Environment.CreateWebResourceResponse(null, 403, "Blocked", "");
+        tab.BlockedCount++;
+        if (tab == _current) QueueBlockedCountUpdate();
+    }
+
+    private static bool IsSameSite(string host, string top) =>
+        host.Equals(top, StringComparison.OrdinalIgnoreCase) ||
+        host.EndsWith("." + top, StringComparison.OrdinalIgnoreCase) ||
+        top.EndsWith("." + host, StringComparison.OrdinalIgnoreCase);
+
+    // Records the top-level site of a tab and whether it has a Shield exception. Done on navigation
+    // events, not per request, so the handler only reads two fields.
+    private void SetTabTopSite(BrowserTab tab, string? url)
+    {
+        string host = "";
+        if (Uri.TryCreate(url, UriKind.Absolute, out var uri) &&
+            (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
+            host = uri.IdnHost.TrimEnd('.');
+
+        tab.TopHost = host;
+        tab.SiteAllowed = host.Length > 0 &&
+                          ContainsSiteOrSubdomain(_isPrivate ? _privateAllowedSites : AllowedSites, host);
+    }
+
+    private void RefreshSiteAllowance()
+    {
+        foreach (var tab in _tabs)
+            SetTabTopSite(tab, tab.View.CoreWebView2?.Source);
+    }
+
+    // Coalesces many blocked requests into one UI update.
+    private void QueueBlockedCountUpdate()
+    {
+        if (_blockedTextPending) return;
+        _blockedTextPending = true;
+        Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
         {
-            if (host == blocked || host.EndsWith("." + blocked, StringComparison.OrdinalIgnoreCase))
-            {
-                var core = (CoreWebView2)sender!;
-                e.Response = core.Environment.CreateWebResourceResponse(null, 403, "Blocked", "");
-                _blocked++;
-                BlockedCount.Text = _blocked.ToString();
-                return;
-            }
+            _blockedTextPending = false;
+            BlockedCount.Text = (_current?.BlockedCount ?? 0).ToString();
+        }));
+    }
+
+    // ---------- Permissions ----------
+
+    // Denies permissions that are rarely needed and commonly abused. Camera, microphone and the
+    // rest keep WebView2's normal prompt. Denials are not saved in the profile.
+    private void HandlePermissionRequested(CoreWebView2PermissionRequestedEventArgs e)
+    {
+        if (!_settings.BlockSensitivePermissions) return;
+
+        switch (e.PermissionKind)
+        {
+            case CoreWebView2PermissionKind.Geolocation:
+            case CoreWebView2PermissionKind.Notifications:
+            case CoreWebView2PermissionKind.ClipboardRead:
+            case CoreWebView2PermissionKind.OtherSensors:
+            case CoreWebView2PermissionKind.MultipleAutomaticDownloads:
+                e.State = CoreWebView2PermissionState.Deny;
+                e.SavesInProfile = false;
+                e.Handled = true;
+                break;
         }
     }
 
@@ -959,6 +1049,7 @@ public partial class MainWindow : Window
         if (_settingsLoaded) return;
         _settings = BrowserSettingsStore.Load();
         _settingsLoaded = true;
+        ShieldEngine.Instance.Start(_settings.UpdateFilterLists);
     }
 
     private static void ApplySettingsToOpenWindows(BrowserSettings settings)
@@ -1005,13 +1096,6 @@ public partial class MainWindow : Window
             return null;
 
         return uri.IdnHost.TrimEnd('.');
-    }
-
-    private bool IsCurrentSiteAllowed(CoreWebView2 core)
-    {
-        if (!Uri.TryCreate(core.Source, UriKind.Absolute, out var uri)) return false;
-        var allowedSites = _isPrivate ? _privateAllowedSites : AllowedSites;
-        return ContainsSiteOrSubdomain(allowedSites, uri.IdnHost);
     }
 
     private static bool ContainsSiteOrSubdomain(HashSet<string> sites, string host) =>
