@@ -32,7 +32,8 @@ New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
     --runtime $RuntimeIdentifier `
     --self-contained true `
     --output $publishDir `
-    -p:UseAppHost=true
+    -p:UseAppHost=true `
+    -p:Version=$AppVersion
 if ($LASTEXITCODE -ne 0) {
     throw "dotnet publish failed with exit code $LASTEXITCODE."
 }
