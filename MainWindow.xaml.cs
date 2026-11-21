@@ -306,7 +306,6 @@ public partial class MainWindow : Window
         CoreWebView2WebResourceContext.Media,
         CoreWebView2WebResourceContext.Ping,
         CoreWebView2WebResourceContext.EventSource,
-        CoreWebView2WebResourceContext.WebSocket,
         CoreWebView2WebResourceContext.CspViolationReport,
         CoreWebView2WebResourceContext.Other
     };
