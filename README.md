@@ -2,7 +2,7 @@
 
 Butane is a Windows desktop browser built with C#, WPF, and WebView2 (the Microsoft Edge
 engine). It has a dark monospace interface with a sidebar for tabs.
-
+               
 ## Run it
 
 1. Install the **.NET 8 SDK**: https://dotnet.microsoft.com/download
