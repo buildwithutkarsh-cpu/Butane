@@ -9,6 +9,7 @@
     <RootNamespace>Butane</RootNamespace>
     <AssemblyName>Butane</AssemblyName>
     <ApplicationIcon>butane.ico</ApplicationIcon>
+    <Version>1.0.0</Version>
   </PropertyGroup>
 
   <ItemGroup>
