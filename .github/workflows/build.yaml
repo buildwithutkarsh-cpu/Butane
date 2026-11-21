@@ -3,8 +3,12 @@ name: Build Butane
 on:
   push:
     branches: [master]
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -16,29 +20,41 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
-      - name: Builda
-        run: dotnet build Butane.csproj --configuration Release
-
       - name: Publish self-contained app
         run: >
           dotnet publish Butane.csproj --configuration Release --runtime win-x64
           --self-contained true --output publish -p:UseAppHost=true
 
-      - name: Upload portable build
-        uses: actions/upload-artifact@v4
-        with:
-          name: Butane-portable-win-x64
-          path: publish/
-
       - name: Install Inno Setup
         run: choco install innosetup --no-progress -y
 
+      - name: Set version
+        id: ver
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF -like 'refs/tags/v*') {
+            $v = $env:GITHUB_REF_NAME.TrimStart('v')
+          } else { $v = '1.0.0' }
+          "version=$v" >> $env:GITHUB_OUTPUT
+
       - name: Build installer
         shell: pwsh
-        run: ./BuildInstaller.ps1
+        run: ./BuildInstaller.ps1 -AppVersion ${{ steps.ver.outputs.version }}
 
-      - name: Upload installer
+      - name: Rename installer to a stable name
+        shell: pwsh
+        run: Copy-Item dist/Butane-Setup-*.exe dist/Butane-Setup.exe
+
+      - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
           name: Butane-Setup
           path: dist/*.exe
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/Butane-Setup.exe
+            dist/Butane-Setup-${{ steps.ver.outputs.version }}.exe
